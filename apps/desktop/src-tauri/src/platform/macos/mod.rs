@@ -7,6 +7,7 @@ mod devices;
 mod encoder;
 mod frame;
 mod permissions;
+mod remux;
 mod screen;
 mod stream;
 mod util;
@@ -27,6 +28,9 @@ use crate::recording::capture::{
 pub struct MacPlatform;
 
 impl Platform for MacPlatform {
+    /// Fragmented QuickTime movie; see `encoder.rs` for why.
+    const INTERMEDIATE_EXTENSION: &'static str = "mov";
+
     fn capabilities() -> PlatformCapabilities {
         macos_capabilities(util::os_version())
     }
@@ -83,6 +87,10 @@ impl Platform for MacPlatform {
 
     fn encoder(settings: &EncoderSettings) -> AppResult<Box<dyn VideoEncoder>> {
         Ok(Box::new(encoder::MacEncoder::new(settings)?))
+    }
+
+    fn finalize_recording(intermediate: &Path, destination: &Path) -> AppResult<()> {
+        remux::to_mp4(intermediate, destination)
     }
 
     fn decode_audio_file(path: &Path) -> AppResult<Vec<f32>> {

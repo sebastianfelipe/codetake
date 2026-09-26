@@ -33,6 +33,9 @@ mod unimplemented;
 pub type Current = unimplemented::UnimplementedPlatform;
 
 pub trait Platform {
+    /// Extension of the file the encoder writes while recording.
+    const INTERMEDIATE_EXTENSION: &'static str;
+
     fn capabilities() -> PlatformCapabilities;
 
     fn permissions() -> PermissionState;
@@ -53,6 +56,9 @@ pub trait Platform {
     fn microphone_capture(device_id: &str) -> AppResult<Box<dyn MicrophoneCapture>>;
     fn system_audio_capture() -> AppResult<Box<dyn SystemAudioCapture>>;
     fn encoder(settings: &EncoderSettings) -> AppResult<Box<dyn VideoEncoder>>;
+    /// Turns a finished intermediate file into the final MP4 at
+    /// `destination`, leaving `intermediate` in place.
+    fn finalize_recording(intermediate: &Path, destination: &Path) -> AppResult<()>;
 
     /// Decodes an audio file to 48 kHz interleaved stereo.
     fn decode_audio_file(path: &Path) -> AppResult<Vec<f32>>;

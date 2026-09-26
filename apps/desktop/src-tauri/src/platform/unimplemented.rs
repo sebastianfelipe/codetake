@@ -28,6 +28,8 @@ fn unsupported<T>() -> AppResult<T> {
 }
 
 impl Platform for UnimplementedPlatform {
+    const INTERMEDIATE_EXTENSION: &'static str = "mp4";
+
     fn capabilities() -> PlatformCapabilities {
         unimplemented_platform_capabilities(std::env::consts::OS, String::new())
     }
@@ -85,6 +87,10 @@ impl Platform for UnimplementedPlatform {
     }
 
     fn encoder(_settings: &EncoderSettings) -> AppResult<Box<dyn VideoEncoder>> {
+        unsupported()
+    }
+
+    fn finalize_recording(_intermediate: &Path, _destination: &Path) -> AppResult<()> {
         unsupported()
     }
 

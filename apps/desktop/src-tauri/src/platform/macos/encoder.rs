@@ -1,9 +1,17 @@
-//! H.264/AAC MP4 encoding with `AVAssetWriter` (hardware accelerated through
+//! H.264/AAC encoding with `AVAssetWriter` (hardware accelerated through
 //! VideoToolbox).
 //!
-//! The file is written as a fragmented MP4 (a new fragment every
-//! [`FRAGMENT_SECONDS`]), so if CodeTake is killed mid-recording everything up
-//! to the last fragment is still playable.
+//! Media is written progressively as a fragmented QuickTime movie (a new
+//! fragment every [`FRAGMENT_SECONDS`]), so if CodeTake is killed
+//! mid-recording everything up to the last fragment is still playable. When
+//! recording stops the movie is losslessly remuxed into the final MP4 (see
+//! `remux.rs`).
+//!
+//! Why not write fragmented MP4 directly? `AVAssetWriter` intermittently
+//! fails to finalize fragmented MPEG-4 files (`-11800` with underlying
+//! `-16341`) once at least one fragment has been flushed; in our tests
+//! about a third of 4-second recordings failed. Fragmented QuickTime movies
+//! with identical settings finalized reliably.
 
 use std::ptr::{self, NonNull};
 use std::thread;
@@ -15,12 +23,13 @@ use objc2::runtime::AnyObject;
 use objc2::AllocAnyThread;
 use objc2_av_foundation::{
     AVAssetWriter, AVAssetWriterInput, AVAssetWriterInputPixelBufferAdaptor, AVAssetWriterStatus,
-    AVFileTypeMPEG4, AVMediaTypeAudio, AVMediaTypeVideo, AVVideoAverageBitRateKey, AVVideoCodecKey,
-    AVVideoCodecTypeH264, AVVideoColorPrimariesKey, AVVideoColorPrimaries_ITU_R_709_2,
-    AVVideoColorPropertiesKey, AVVideoCompressionPropertiesKey, AVVideoExpectedSourceFrameRateKey,
-    AVVideoHeightKey, AVVideoMaxKeyFrameIntervalKey, AVVideoProfileLevelH264HighAutoLevel,
-    AVVideoProfileLevelKey, AVVideoTransferFunctionKey, AVVideoTransferFunction_ITU_R_709_2,
-    AVVideoWidthKey, AVVideoYCbCrMatrixKey, AVVideoYCbCrMatrix_ITU_R_709_2,
+    AVFileTypeQuickTimeMovie, AVMediaTypeAudio, AVMediaTypeVideo, AVVideoAverageBitRateKey,
+    AVVideoCodecKey, AVVideoCodecTypeH264, AVVideoColorPrimariesKey,
+    AVVideoColorPrimaries_ITU_R_709_2, AVVideoColorPropertiesKey, AVVideoCompressionPropertiesKey,
+    AVVideoExpectedSourceFrameRateKey, AVVideoHeightKey, AVVideoMaxKeyFrameIntervalKey,
+    AVVideoProfileLevelH264HighAutoLevel, AVVideoProfileLevelKey, AVVideoTransferFunctionKey,
+    AVVideoTransferFunction_ITU_R_709_2, AVVideoWidthKey, AVVideoYCbCrMatrixKey,
+    AVVideoYCbCrMatrix_ITU_R_709_2,
 };
 use objc2_avf_audio::{AVEncoderBitRateKey, AVFormatIDKey, AVNumberOfChannelsKey, AVSampleRateKey};
 use objc2_core_audio_types::{
@@ -211,8 +220,8 @@ impl MacEncoder {
         let url = NSURL::fileURLWithPath(&path);
         // SAFETY: valid file URL and file type constant.
         let writer = unsafe {
-            let file_type = AVFileTypeMPEG4
-                .ok_or_else(|| AppError::Encoder("MP4 output is unavailable".into()))?;
+            let file_type = AVFileTypeQuickTimeMovie
+                .ok_or_else(|| AppError::Encoder("QuickTime output is unavailable".into()))?;
             AVAssetWriter::initWithURL_fileType_error(AVAssetWriter::alloc(), &url, file_type)
                 .map_err(|e| AppError::Encoder(describe_error(&e)))?
         };

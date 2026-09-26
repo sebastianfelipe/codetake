@@ -88,6 +88,8 @@ struct Shared {
     mixer: Mutex<AudioMixer>,
     encoder: Mutex<Box<dyn VideoEncoder>>,
     running: AtomicBool,
+    /// Media time of the last encoded video frame.
+    last_video_time: Mutex<Option<f64>>,
     /// First fatal error; setting it makes the supervisor stop the recording.
     failure: Mutex<Option<AppError>>,
     warnings: Mutex<Vec<String>>,
@@ -293,7 +295,12 @@ pub fn start<P: Platform>(
     let source_size = P::source_size(&config.source)?;
     let size = output_size(source_size, config.resolution);
     let started_at = Local::now();
-    let plan = output::plan_output(&config.output_directory, &started_at, |p| p.exists());
+    let plan = output::plan_output(
+        &config.output_directory,
+        &started_at,
+        P::INTERMEDIATE_EXTENSION,
+        |p| p.exists(),
+    );
     output::prepare_output(&plan, output::available_space(&config.output_directory))?;
 
     let music = match (&config.music, &music_path) {
@@ -340,6 +347,7 @@ pub fn start<P: Platform>(
         })),
         encoder: Mutex::new(encoder),
         running: AtomicBool::new(true),
+        last_video_time: Mutex::new(None),
         failure: Mutex::new(None),
         warnings: Mutex::new(Vec::new()),
         last_microphone: Mutex::new(None),
@@ -367,6 +375,7 @@ pub fn start<P: Platform>(
         threads: Some(threads),
         events,
         host_time,
+        finalize_recording: P::finalize_recording,
     };
     thread::Builder::new()
         .name("codetake-recorder".into())
@@ -532,7 +541,10 @@ fn video_loop(shared: &Shared, fps: u32, overlay: Option<(Rect, Mask)>, host_tim
 
         let result = shared.encoder.lock().append_video(media_time, &mut draw);
         match result {
-            Ok(true) => last_media_time = media_time,
+            Ok(true) => {
+                last_media_time = media_time;
+                *shared.last_video_time.lock() = Some(media_time);
+            }
             Ok(false) => log::debug!("encoder busy, dropped a frame at {media_time:.3}s"),
             Err(error) => {
                 shared.fail(error);
@@ -574,6 +586,7 @@ struct Supervisor {
     threads: Option<MediaThreads>,
     events: Arc<dyn RecorderEvents>,
     host_time: fn() -> f64,
+    finalize_recording: fn(&std::path::Path, &std::path::Path) -> AppResult<()>,
 }
 
 impl Supervisor {
@@ -688,7 +701,7 @@ impl Supervisor {
         } else {
             RecordingEvent::Stop
         });
-        let end_time = self.elapsed();
+        let stop_time = self.elapsed();
 
         self.shared.running.store(false, Ordering::Release);
         if let Some(threads) = self.threads.take() {
@@ -697,23 +710,45 @@ impl Supervisor {
                 let _ = audio.join();
             }
         }
+        // End the session after the last frame's full duration, so the final
+        // frame is shown for its whole duration; audio is flushed up to the
+        // same point.
+        let frame_duration = 1.0 / f64::from(self.session.config.fps.as_u32());
+        let end_time = self
+            .shared
+            .last_video_time
+            .lock()
+            .map_or(stop_time, |last| stop_time.max(last + frame_duration));
         self.captures.stop();
 
-        let finalized = (|| -> AppResult<()> {
+        let written = (|| -> AppResult<()> {
             if self.session.config.has_audio() {
                 mix_and_encode(&self.shared, end_time)?;
             }
             self.shared.encoder.lock().finish(end_time)
         })();
 
-        // If the encoder finalized the file it is complete and playable, even
+        // If the encoder finished the file it is complete and playable, even
         // when the recording ended early because of `error`.
         let mut error = error;
         let plan: &OutputPlan = &self.session.output;
-        let (path, complete) = match finalized.and_then(|()| output::finalize(plan)) {
-            Ok(path) => (Some(path), true),
-            Err(finalize_error) => {
-                error.get_or_insert(finalize_error);
+        let (path, complete) = match written {
+            Ok(()) => match (self.finalize_recording)(&plan.partial_path, &plan.final_path) {
+                Ok(()) => {
+                    output::discard(plan);
+                    (Some(plan.final_path.clone()), true)
+                }
+                Err(conversion_error) => {
+                    let _ = std::fs::remove_file(&plan.final_path);
+                    self.shared.warn(format!(
+                        "The recording was kept in its original format because converting it \
+                         to MP4 failed: {conversion_error}"
+                    ));
+                    (output::keep_fallback(plan), true)
+                }
+            },
+            Err(write_error) => {
+                error.get_or_insert(write_error);
                 (output::keep_incomplete(plan), false)
             }
         };

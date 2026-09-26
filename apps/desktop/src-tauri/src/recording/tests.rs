@@ -31,6 +31,7 @@ struct Behaviour {
     screen_error_after: Option<Duration>,
     camera_fails: bool,
     encoder_fails_at_frame: Option<usize>,
+    conversion_fails: bool,
 }
 
 #[derive(Default)]
@@ -250,6 +251,8 @@ impl VideoEncoder for FakeEncoder {
 struct FakePlatform;
 
 impl Platform for FakePlatform {
+    const INTERMEDIATE_EXTENSION: &'static str = "mov";
+
     fn capabilities() -> PlatformCapabilities {
         macos_capabilities(OsVersion::new(15, 0, 0))
     }
@@ -299,6 +302,13 @@ impl Platform for FakePlatform {
             path: settings.path.clone(),
             frames: 0,
         }))
+    }
+    fn finalize_recording(intermediate: &Path, destination: &Path) -> AppResult<()> {
+        if behaviour().lock().conversion_fails {
+            return Err(AppError::Encoder("conversion failed".into()));
+        }
+        fs::copy(intermediate, destination)?;
+        Ok(())
     }
     fn decode_audio_file(_: &Path) -> AppResult<Vec<f32>> {
         Ok(vec![0.1; 4800 * 2])
@@ -430,6 +440,34 @@ fn records_and_finalizes_an_mp4() {
     );
     drop(log);
     assert!(events.finished.lock().is_some());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn keeps_a_playable_movie_when_mp4_conversion_fails() {
+    let _guard = serial();
+    reset(Behaviour {
+        conversion_fails: true,
+        ..Behaviour::default()
+    });
+    let dir = temp_dir("conversion");
+    let handle = recorder::start::<FakePlatform>(
+        StartRequest {
+            config: config(&dir),
+            music_path: None,
+        },
+        Arc::new(Events::default()),
+    )
+    .unwrap();
+    thread::sleep(Duration::from_millis(200));
+    let outcome = handle.stop().unwrap();
+    assert!(outcome.complete);
+    assert!(outcome.error.is_none());
+    let path = outcome.path.unwrap();
+    assert!(path.to_string_lossy().ends_with(".mov"), "{path:?}");
+    assert!(path.exists());
+    assert_eq!(outcome.warnings.len(), 1);
+    assert_eq!(files_in(&dir).len(), 1);
     fs::remove_dir_all(dir).unwrap();
 }
 

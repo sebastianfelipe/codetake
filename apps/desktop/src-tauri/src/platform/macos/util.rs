@@ -41,8 +41,19 @@ pub unsafe fn error_message(error: *mut NSError) -> Option<(isize, String)> {
     Some((error.code(), error.localizedDescription().to_string()))
 }
 
+/// Formats an error with its code and underlying causes, which carry the
+/// actionable detail for AVFoundation's generic errors.
 pub fn describe_error(error: &NSError) -> String {
-    format!("{} (code {})", error.localizedDescription(), error.code())
+    let mut message = format!("{} (code {})", error.localizedDescription(), error.code());
+    for cause in error.underlyingErrors().iter() {
+        message.push_str(&format!(
+            "; {} {} (code {})",
+            cause.domain(),
+            cause.localizedDescription(),
+            cause.code()
+        ));
+    }
+    message
 }
 
 pub fn host_time() -> f64 {
