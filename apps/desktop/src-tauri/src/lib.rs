@@ -5,6 +5,7 @@ pub mod devices;
 pub mod error;
 pub mod output;
 pub mod permissions;
+pub mod platform;
 pub mod recording;
 pub mod video;
 
