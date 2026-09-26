@@ -37,11 +37,11 @@ use crate::export::{mix_block, music_block, ExportJob, MusicBed};
 /// Frames of music generated per block when the recording has no audio.
 const MUSIC_BLOCK_FRAMES: usize = 4096;
 
-fn fail(message: impl Into<String>) -> AppError {
+pub(super) fn fail(message: impl Into<String>) -> AppError {
     AppError::Encoder(format!("export failed: {}", message.into()))
 }
 
-fn file_url(path: &Path) -> Retained<NSURL> {
+pub(super) fn file_url(path: &Path) -> Retained<NSURL> {
     NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()))
 }
 
@@ -52,7 +52,10 @@ struct SentTrack(Option<Retained<AVAssetTrack>>);
 // concurrently; AVAssetTrack is an immutable description of the asset.
 unsafe impl Send for SentTrack {}
 
-fn first_track(asset: &AVAsset, media: &AVMediaType) -> AppResult<Option<Retained<AVAssetTrack>>> {
+pub(super) fn first_track(
+    asset: &AVAsset,
+    media: &AVMediaType,
+) -> AppResult<Option<Retained<AVAssetTrack>>> {
     let result = wait_for(Duration::from_secs(30), |tx| {
         let handler = RcBlock::new(
             move |tracks: *mut NSArray<AVAssetTrack>, error: *mut NSError| {
@@ -76,7 +79,7 @@ fn first_track(asset: &AVAsset, media: &AVMediaType) -> AppResult<Option<Retaine
     }
 }
 
-fn pcm_output_settings() -> AppResult<Retained<Dict>> {
+pub(super) fn pcm_output_settings() -> AppResult<Retained<Dict>> {
     let number = |v: f64| object(NSNumber::new_f64(v));
     let boolean = |v: bool| object(NSNumber::new_bool(v));
     // SAFETY: reading framework constant strings.
@@ -93,14 +96,14 @@ fn pcm_output_settings() -> AppResult<Retained<Dict>> {
     }
 }
 
-fn seconds(sample: &CMSampleBuffer) -> f64 {
+pub(super) fn seconds(sample: &CMSampleBuffer) -> f64 {
     // SAFETY: the sample buffer is valid.
     unsafe { sample.presentation_time_stamp().seconds() }
 }
 
 /// Where the export is written until it is complete. Hidden, and not named
 /// like a partial recording, so crash recovery never picks it up.
-fn temporary_path(destination: &Path) -> PathBuf {
+pub(super) fn temporary_path(destination: &Path) -> PathBuf {
     let name = destination
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -225,7 +228,7 @@ fn write(job: &ExportJob, temporary: &Path, progress: &mut dyn FnMut(f64)) -> Ap
         }
         writer.startSessionAtSourceTime(CMTime::new(0, 1));
 
-        let music = MusicBed::new(job.music_samples.clone(), job.music_volume, duration);
+        let music = MusicBed::for_export(job.music.as_ref(), duration);
         let pcm = pcm_format()?;
         let total_frames = (duration * f64::from(SAMPLE_RATE)).round() as u64;
         let mut converter: Option<Converter> = None;

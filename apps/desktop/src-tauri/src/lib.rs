@@ -95,7 +95,7 @@ pub fn run() {
             commands::stop_recording,
             commands::allow_media,
             commands::music_track_file,
-            commands::export_recording,
+            commands::export_video,
             tray::update_tray,
             tray::set_tray_indicator,
         ])

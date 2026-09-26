@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use codetake_lib::export::{export_path, ExportJob};
+use codetake_lib::export::{export_path, ExportJob, ExportMusic};
 use codetake_lib::platform::{Current, Platform};
 
 fn main() {
@@ -22,8 +22,10 @@ fn main() {
         destination: export_path(&source, |p| p.exists()),
         source,
         recording_volume,
-        music_samples: Arc::new(Current::decode_audio_file(&music).expect("decode music")),
-        music_volume,
+        music: Some(ExportMusic {
+            samples: Arc::new(Current::decode_audio_file(&music).expect("decode music")),
+            volume: music_volume,
+        }),
     };
     let started = Instant::now();
     let mut last = -1.0;

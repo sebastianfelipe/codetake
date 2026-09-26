@@ -1,9 +1,17 @@
-//! Exports a finished recording with background music.
+//! Exports the finished video from a raw recording.
 //!
-//! Recordings are saved "raw" (screen, webcam, microphone and system audio,
-//! no music). In the review step the user picks a track and balances its
-//! volume against the recording while previewing; the export then writes a
-//! new file. The video is copied untouched and only the audio is re-mixed:
+//! Recordings are saved raw: the screen (with microphone and system audio)
+//! and the webcam in separate files, without music. In the review step the
+//! user places the webcam, picks music and balances it against the
+//! recording; the export then writes the final file, as cheaply as possible
+//! ([`plan_export`]):
+//!
+//! - webcam shown → composite it onto the screen (video re-encoded);
+//! - otherwise, music or a changed voice volume → re-mix only the audio,
+//!   copying the video untouched;
+//! - otherwise → copy the screen recording.
+//!
+//! Audio mixing:
 //!
 //! ```text
 //! recording audio × recording volume ─┐
@@ -21,6 +29,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::audio::mixer::soft_clip;
 use crate::audio::{CHANNELS, SAMPLE_RATE};
+use crate::config::{CameraOverlay, Fps};
 
 /// Music fades in over this long at the start of the video...
 pub const FADE_IN_SECONDS: f64 = 1.5;
@@ -33,12 +42,22 @@ pub const MAX_RECORDING_VOLUME: f32 = 2.0;
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportSettings {
-    pub source: PathBuf,
-    pub track_id: String,
+    /// The raw screen recording.
+    pub screen: PathBuf,
+    /// The raw webcam recording, if there is one.
+    pub camera: Option<PathBuf>,
+    /// Where to place the webcam, or `None` to leave it out.
+    pub overlay: Option<CameraOverlay>,
+    /// Background music, if any.
+    pub track_id: Option<String>,
     /// Linear gain for the music, 0..=1.
     pub music_volume: f32,
     /// Linear gain for the recorded audio, 0..=2.
     pub recording_volume: f32,
+    /// Where to write the video (a free name next to it is used if taken).
+    pub destination: PathBuf,
+    /// Frame rate of the recording.
+    pub fps: u32,
 }
 
 impl ExportSettings {
@@ -51,22 +70,73 @@ impl ExportSettings {
                 "recording volume must be between 0 and {MAX_RECORDING_VOLUME}"
             ));
         }
-        if self.track_id.trim().is_empty() {
+        if self.track_id.as_ref().is_some_and(|t| t.trim().is_empty()) {
             return Err("no music track selected".into());
+        }
+        if self.overlay.is_some() && self.camera.is_none() {
+            return Err("there is no camera recording to show".into());
+        }
+        if Fps::try_from(self.fps).is_err() {
+            return Err(format!("unsupported frame rate {}", self.fps));
         }
         Ok(())
     }
+
+    pub fn plan(&self) -> ExportPlan {
+        plan_export(
+            self.overlay.is_some() && self.camera.is_some(),
+            self.track_id.is_some(),
+            self.recording_volume,
+        )
+    }
 }
 
-/// Everything the platform exporter needs, resolved.
+/// How the final video is produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportPlan {
+    /// Nothing to change: copy the screen recording.
+    Copy,
+    /// Re-mix the audio (music, voice volume); copy the video untouched.
+    RemixAudio,
+    /// Composite the webcam onto the screen; re-encode the video.
+    Composite,
+}
+
+pub fn plan_export(show_camera: bool, music: bool, recording_volume: f32) -> ExportPlan {
+    if show_camera {
+        ExportPlan::Composite
+    } else if music || (recording_volume - 1.0).abs() > f32::EPSILON {
+        ExportPlan::RemixAudio
+    } else {
+        ExportPlan::Copy
+    }
+}
+
+/// Background music for an export: decoded samples (48 kHz interleaved
+/// stereo) and a volume, looped and faded to the video by [`MusicBed`].
+#[derive(Debug, Clone)]
+pub struct ExportMusic {
+    pub samples: Arc<Vec<f32>>,
+    pub volume: f32,
+}
+
+/// Re-mixes the audio of a recording, copying its video.
 pub struct ExportJob {
     pub source: PathBuf,
     pub destination: PathBuf,
     pub recording_volume: f32,
-    /// Decoded music (48 kHz interleaved stereo); looped and faded to the
-    /// video's length by [`MusicBed`].
-    pub music_samples: Arc<Vec<f32>>,
-    pub music_volume: f32,
+    pub music: Option<ExportMusic>,
+}
+
+/// Composites the webcam onto the screen recording.
+pub struct CompositeJob {
+    pub screen: PathBuf,
+    pub camera: PathBuf,
+    pub overlay: CameraOverlay,
+    pub destination: PathBuf,
+    pub fps: Fps,
+    pub recording_volume: f32,
+    pub music: Option<ExportMusic>,
 }
 
 /// Looping background music with fades, positioned on the video timeline.
@@ -80,6 +150,14 @@ pub struct MusicBed {
 }
 
 impl MusicBed {
+    /// A bed for `music` (or silence) under a video of the given length.
+    pub fn for_export(music: Option<&ExportMusic>, duration_seconds: f64) -> Self {
+        match music {
+            Some(music) => Self::new(music.samples.clone(), music.volume, duration_seconds),
+            None => Self::new(Arc::new(Vec::new()), 0.0, duration_seconds),
+        }
+    }
+
     pub fn new(samples: Arc<Vec<f32>>, gain: f32, duration_seconds: f64) -> Self {
         Self {
             samples,
@@ -245,32 +323,80 @@ mod tests {
         assert!(second.to_string_lossy().ends_with("-with-music-2.mp4"));
     }
 
-    #[test]
-    fn validates_volumes() {
-        let ok = ExportSettings {
-            source: "/r.mp4".into(),
-            track_id: "coding-01".into(),
+    fn settings() -> ExportSettings {
+        ExportSettings {
+            screen: "/r/raw/a-screen.mp4".into(),
+            camera: Some("/r/raw/a-camera.mp4".into()),
+            overlay: Some(CameraOverlay::default()),
+            track_id: Some("coding-01".into()),
             music_volume: 0.3,
             recording_volume: 1.2,
-        };
-        assert!(ok.validate().is_ok());
+            destination: "/r/a.mp4".into(),
+            fps: 30,
+        }
+    }
+
+    #[test]
+    fn validates_settings() {
+        assert!(settings().validate().is_ok());
         assert!(ExportSettings {
             music_volume: 1.5,
-            ..ok.clone()
+            ..settings()
         }
         .validate()
         .is_err());
         assert!(ExportSettings {
             recording_volume: 3.0,
-            ..ok.clone()
+            ..settings()
         }
         .validate()
         .is_err());
         assert!(ExportSettings {
-            track_id: " ".into(),
-            ..ok
+            track_id: Some(" ".into()),
+            ..settings()
         }
         .validate()
         .is_err());
+        assert!(ExportSettings {
+            camera: None,
+            ..settings()
+        }
+        .validate()
+        .is_err());
+        assert!(ExportSettings {
+            fps: 24,
+            ..settings()
+        }
+        .validate()
+        .is_err());
+    }
+
+    #[test]
+    fn chooses_the_cheapest_way_to_export() {
+        assert_eq!(settings().plan(), ExportPlan::Composite);
+        let no_camera = ExportSettings {
+            overlay: None,
+            ..settings()
+        };
+        assert_eq!(no_camera.plan(), ExportPlan::RemixAudio);
+        let untouched = ExportSettings {
+            overlay: None,
+            track_id: None,
+            recording_volume: 1.0,
+            ..settings()
+        };
+        assert_eq!(untouched.plan(), ExportPlan::Copy);
+        let louder = ExportSettings {
+            recording_volume: 1.5,
+            ..untouched
+        };
+        assert_eq!(louder.plan(), ExportPlan::RemixAudio);
+    }
+
+    #[test]
+    fn silent_music_bed_leaves_the_recording_alone() {
+        let bed = MusicBed::for_export(None, 10.0);
+        let out = mix_block(&[0.3; 8], 1.0, &bed, 5 * RATE);
+        assert!(out.iter().all(|s| (s - 0.3).abs() < 1e-6));
     }
 }

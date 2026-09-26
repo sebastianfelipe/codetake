@@ -12,7 +12,7 @@ use crate::capabilities::{unimplemented_platform_capabilities, PlatformCapabilit
 use crate::config::{CaptureSource, Size};
 use crate::devices::{CameraInfo, DisplayInfo, MicrophoneInfo, WindowInfo};
 use crate::error::{AppError, AppResult};
-use crate::export::ExportJob;
+use crate::export::{CompositeJob, ExportJob};
 use crate::permissions::{PermissionKind, PermissionState, PermissionStatus};
 use crate::recording::capture::{
     CameraCapture, EncoderSettings, MicrophoneCapture, ScreenCapture, ScreenCaptureRequest,
@@ -96,6 +96,10 @@ impl Platform for UnimplementedPlatform {
     }
 
     fn export_recording(_job: &ExportJob, _progress: &mut dyn FnMut(f64)) -> AppResult<()> {
+        unsupported()
+    }
+
+    fn composite_recording(_job: &CompositeJob, _progress: &mut dyn FnMut(f64)) -> AppResult<()> {
         unsupported()
     }
 

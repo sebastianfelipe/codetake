@@ -16,7 +16,7 @@ use crate::capabilities::PlatformCapabilities;
 use crate::config::{CaptureSource, Size};
 use crate::devices::{CameraInfo, DisplayInfo, MicrophoneInfo, WindowInfo};
 use crate::error::AppResult;
-use crate::export::ExportJob;
+use crate::export::{CompositeJob, ExportJob};
 use crate::permissions::{PermissionKind, PermissionState, PermissionStatus};
 use crate::recording::capture::{
     CameraCapture, EncoderSettings, MicrophoneCapture, ScreenCapture, ScreenCaptureRequest,
@@ -64,6 +64,10 @@ pub trait Platform {
     /// Writes `job.destination`: the recording with music mixed in (video
     /// copied as is). Reports progress from 0 to 1.
     fn export_recording(job: &ExportJob, progress: &mut dyn FnMut(f64)) -> AppResult<()>;
+
+    /// Writes `job.destination`: the webcam composited onto the screen at the
+    /// chosen place, with the audio re-mixed. Reports progress from 0 to 1.
+    fn composite_recording(job: &CompositeJob, progress: &mut dyn FnMut(f64)) -> AppResult<()>;
 
     /// Decodes an audio file to 48 kHz interleaved stereo.
     fn decode_audio_file(path: &Path) -> AppResult<Vec<f32>>;

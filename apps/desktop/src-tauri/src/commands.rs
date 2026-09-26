@@ -16,7 +16,7 @@ use crate::capabilities::PlatformCapabilities;
 use crate::config::RecordingConfig;
 use crate::devices::{CameraInfo, DisplayInfo, MicrophoneInfo, WindowInfo};
 use crate::error::{AppError, AppResult};
-use crate::export::{export_path, ExportJob, ExportSettings};
+use crate::export::{CompositeJob, ExportJob, ExportMusic, ExportPlan, ExportSettings};
 use crate::music::{self, MusicTrack};
 use crate::output;
 use crate::permissions::{PermissionKind, PermissionState, PermissionStatus};
@@ -189,38 +189,78 @@ pub fn music_track_file(app: AppHandle, track_id: String) -> AppResult<PathBuf> 
     Ok(path)
 }
 
-/// Writes `<recording>-with-music.mp4` and returns its path. The original
-/// recording is left untouched.
+/// Exports the finished video from the raw recording with the review
+/// step's choices (webcam placement, music, voice volume) and returns its
+/// path. The raw files are left untouched.
 #[tauri::command]
-pub async fn export_recording(
+pub async fn export_video(
     app: AppHandle,
     settings: ExportSettings,
     progress: Channel<f64>,
 ) -> AppResult<PathBuf> {
     settings.validate().map_err(AppError::InvalidConfig)?;
     blocking(move || {
-        if !settings.source.is_file() {
-            return Err(AppError::Storage(format!(
-                "{} no longer exists",
-                settings.source.display()
-            )));
+        for file in std::iter::once(&settings.screen).chain(settings.camera.iter()) {
+            if !file.is_file() {
+                return Err(AppError::Storage(format!(
+                    "{} no longer exists",
+                    file.display()
+                )));
+            }
         }
-        let music_path = music::resolve(&music_dir(&app)?, &settings.track_id)?;
-        let job = ExportJob {
-            destination: export_path(&settings.source, |p| p.exists()),
-            source: settings.source,
-            recording_volume: settings.recording_volume,
-            music_samples: Arc::new(Current::decode_audio_file(&music_path)?),
-            music_volume: settings.music_volume,
+        let destination = output::unique_path(&settings.destination, |p| p.exists());
+        let music = match &settings.track_id {
+            Some(id) => Some(ExportMusic {
+                samples: Arc::new(Current::decode_audio_file(&music::resolve(
+                    &music_dir(&app)?,
+                    id,
+                )?)?),
+                volume: settings.music_volume,
+            }),
+            None => None,
         };
         let mut last = -1.0;
-        Current::export_recording(&job, &mut |fraction| {
+        let mut report = |fraction: f64| {
             if fraction - last >= 0.01 || fraction >= 1.0 {
                 last = fraction;
                 let _ = progress.send(fraction);
             }
-        })?;
-        Ok(job.destination)
+        };
+        match settings.plan() {
+            ExportPlan::Copy => {
+                fs::copy(&settings.screen, &destination)?;
+                report(1.0);
+            }
+            ExportPlan::RemixAudio => Current::export_recording(
+                &ExportJob {
+                    source: settings.screen.clone(),
+                    destination: destination.clone(),
+                    recording_volume: settings.recording_volume,
+                    music,
+                },
+                &mut report,
+            )?,
+            ExportPlan::Composite => {
+                let (Some(camera), Some(overlay)) = (settings.camera.clone(), settings.overlay)
+                else {
+                    return Err(AppError::InvalidConfig("no camera to composite".into()));
+                };
+                Current::composite_recording(
+                    &CompositeJob {
+                        screen: settings.screen.clone(),
+                        camera,
+                        overlay,
+                        destination: destination.clone(),
+                        fps: crate::config::Fps::try_from(settings.fps)
+                            .map_err(AppError::InvalidConfig)?,
+                        recording_volume: settings.recording_volume,
+                        music,
+                    },
+                    &mut report,
+                )?
+            }
+        }
+        Ok(destination)
     })
     .await
 }

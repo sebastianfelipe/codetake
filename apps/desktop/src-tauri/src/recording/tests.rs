@@ -333,6 +333,12 @@ impl Platform for FakePlatform {
     fn export_recording(_: &crate::export::ExportJob, _: &mut dyn FnMut(f64)) -> AppResult<()> {
         Ok(())
     }
+    fn composite_recording(
+        _: &crate::export::CompositeJob,
+        _: &mut dyn FnMut(f64),
+    ) -> AppResult<()> {
+        Ok(())
+    }
     fn decode_audio_file(_: &Path) -> AppResult<Vec<f32>> {
         Ok(vec![0.1; 4800 * 2])
     }

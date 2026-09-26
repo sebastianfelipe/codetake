@@ -3,6 +3,7 @@
 
 mod audio_file;
 mod capture_session;
+mod composite;
 mod devices;
 mod encoder;
 mod export;
@@ -20,7 +21,7 @@ use crate::capabilities::{macos_capabilities, PlatformCapabilities};
 use crate::config::{CaptureSource, Size};
 use crate::devices::{CameraInfo, DisplayInfo, MicrophoneInfo, WindowInfo};
 use crate::error::AppResult;
-use crate::export::ExportJob;
+use crate::export::{CompositeJob, ExportJob};
 use crate::permissions::{PermissionKind, PermissionState, PermissionStatus};
 use crate::recording::capture::{
     CameraCapture, EncoderSettings, MicrophoneCapture, ScreenCapture, ScreenCaptureRequest,
@@ -97,6 +98,10 @@ impl Platform for MacPlatform {
 
     fn export_recording(job: &ExportJob, progress: &mut dyn FnMut(f64)) -> AppResult<()> {
         export::export(job, progress)
+    }
+
+    fn composite_recording(job: &CompositeJob, progress: &mut dyn FnMut(f64)) -> AppResult<()> {
+        composite::composite(job, progress)
     }
 
     fn decode_audio_file(path: &Path) -> AppResult<Vec<f32>> {
