@@ -56,10 +56,15 @@ CodeTake does not pretend to work where it doesn't. The Windows
 
 ## Installation
 
-Pre-built releases will be published on the
-[GitHub Releases](https://github.com/sebastianfelipe/codetake/releases) page
-(`.dmg` for macOS). Until then, build it from source (below): the result is
-a regular `CodeTake.app`.
+Download `CodeTake_<version>_universal.dmg` from
+[GitHub Releases](https://github.com/sebastianfelipe/codetake/releases) (it
+runs natively on Apple silicon and Intel Macs), open it, and drag
+**CodeTake** to **Applications**. Or build it yourself: `pnpm install &&
+pnpm build` produces the same `.dmg`.
+
+Until releases are signed with an Apple Developer ID, macOS warns that the
+developer can't be verified the first time: right-click CodeTake in
+Applications, choose **Open**, and confirm.
 
 On first use macOS asks for three permissions. CodeTake explains each one
 and links to the right pane of System Settings:
