@@ -1,5 +1,7 @@
 pub mod audio;
+pub mod capabilities;
 pub mod config;
+pub mod devices;
 pub mod error;
 pub mod output;
 pub mod permissions;
