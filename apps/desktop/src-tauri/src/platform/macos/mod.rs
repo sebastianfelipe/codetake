@@ -3,6 +3,7 @@
 
 mod capture_session;
 mod devices;
+mod encoder;
 mod frame;
 mod permissions;
 mod screen;
@@ -85,8 +86,8 @@ impl Platform for MacPlatform {
         Ok(Box::new(screen::MacSystemAudioCapture::default()))
     }
 
-    fn encoder(_settings: &EncoderSettings) -> AppResult<Box<dyn VideoEncoder>> {
-        not_yet("MP4 encoding")
+    fn encoder(settings: &EncoderSettings) -> AppResult<Box<dyn VideoEncoder>> {
+        Ok(Box::new(encoder::MacEncoder::new(settings)?))
     }
 
     fn decode_audio_file(_path: &Path) -> AppResult<Vec<f32>> {
