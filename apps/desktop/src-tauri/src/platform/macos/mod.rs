@@ -2,7 +2,10 @@
 //! for camera, microphone and encoding, AudioToolbox for music decoding.
 
 mod devices;
+mod frame;
 mod permissions;
+mod screen;
+mod stream;
 mod util;
 
 use std::path::Path;
@@ -63,8 +66,8 @@ impl Platform for MacPlatform {
         devices::source_size(source)
     }
 
-    fn screen_capture(_request: ScreenCaptureRequest) -> AppResult<Box<dyn ScreenCapture>> {
-        not_yet("screen capture")
+    fn screen_capture(request: ScreenCaptureRequest) -> AppResult<Box<dyn ScreenCapture>> {
+        Ok(Box::new(screen::MacScreenCapture::new(request)))
     }
 
     fn camera_capture(_device_id: &str) -> AppResult<Box<dyn CameraCapture>> {
@@ -76,7 +79,7 @@ impl Platform for MacPlatform {
     }
 
     fn system_audio_capture() -> AppResult<Box<dyn SystemAudioCapture>> {
-        not_yet("system audio capture")
+        Ok(Box::new(screen::MacSystemAudioCapture::default()))
     }
 
     fn encoder(_settings: &EncoderSettings) -> AppResult<Box<dyn VideoEncoder>> {
