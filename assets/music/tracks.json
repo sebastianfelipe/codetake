@@ -1,0 +1,28 @@
+{
+  "tracks": [
+    {
+      "id": "coding-01",
+      "title": "Late Night Commit",
+      "file": "coding-01.m4a",
+      "author": "CodeTake contributors",
+      "license": "CC0-1.0",
+      "description": "Mellow lo-fi beat with electric piano, 78 BPM."
+    },
+    {
+      "id": "coding-02",
+      "title": "Refactor Groove",
+      "file": "coding-02.m4a",
+      "author": "CodeTake contributors",
+      "license": "CC0-1.0",
+      "description": "Upbeat arpeggios over a light groove, 96 BPM."
+    },
+    {
+      "id": "ambient-01",
+      "title": "Deep Focus",
+      "file": "ambient-01.m4a",
+      "author": "CodeTake contributors",
+      "license": "CC0-1.0",
+      "description": "Slow ambient pads without drums."
+    }
+  ]
+}
