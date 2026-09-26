@@ -16,6 +16,7 @@ use crate::capabilities::PlatformCapabilities;
 use crate::config::RecordingConfig;
 use crate::devices::{CameraInfo, DisplayInfo, MicrophoneInfo, WindowInfo};
 use crate::error::{AppError, AppResult};
+use crate::export::{export_path, ExportJob, ExportSettings};
 use crate::music::{self, MusicTrack};
 use crate::output;
 use crate::permissions::{PermissionKind, PermissionState, PermissionStatus};
@@ -152,6 +153,76 @@ pub fn save_settings(app: AppHandle, settings: serde_json::Value) -> AppResult<(
     )?;
     fs::rename(temp, path)?;
     Ok(())
+}
+
+/// Lets the webview play one media file (a recording or a music track)
+/// through the asset protocol. Only existing audio/video files are allowed,
+/// one at a time; nothing is exposed by pattern.
+fn allow_media_file(app: &AppHandle, path: &std::path::Path) -> AppResult<()> {
+    let is_media = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        matches!(
+            e.to_ascii_lowercase().as_str(),
+            "mp4" | "mov" | "m4a" | "mp3" | "wav"
+        )
+    });
+    if !is_media || !path.is_file() {
+        return Err(AppError::InvalidState(format!(
+            "{} is not a playable media file",
+            path.display()
+        )));
+    }
+    app.asset_protocol_scope()
+        .allow_file(path)
+        .map_err(|e| AppError::InvalidState(format!("cannot play {}: {e}", path.display())))
+}
+
+#[tauri::command]
+pub fn allow_media(app: AppHandle, path: PathBuf) -> AppResult<()> {
+    allow_media_file(&app, &path)
+}
+
+/// The audio file of a bundled track, made playable for the review preview.
+#[tauri::command]
+pub fn music_track_file(app: AppHandle, track_id: String) -> AppResult<PathBuf> {
+    let path = music::resolve(&music_dir(&app)?, &track_id)?;
+    allow_media_file(&app, &path)?;
+    Ok(path)
+}
+
+/// Writes `<recording>-with-music.mp4` and returns its path. The original
+/// recording is left untouched.
+#[tauri::command]
+pub async fn export_recording(
+    app: AppHandle,
+    settings: ExportSettings,
+    progress: Channel<f64>,
+) -> AppResult<PathBuf> {
+    settings.validate().map_err(AppError::InvalidConfig)?;
+    blocking(move || {
+        if !settings.source.is_file() {
+            return Err(AppError::Storage(format!(
+                "{} no longer exists",
+                settings.source.display()
+            )));
+        }
+        let music_path = music::resolve(&music_dir(&app)?, &settings.track_id)?;
+        let job = ExportJob {
+            destination: export_path(&settings.source, |p| p.exists()),
+            source: settings.source,
+            recording_volume: settings.recording_volume,
+            music_samples: Arc::new(Current::decode_audio_file(&music_path)?),
+            music_volume: settings.music_volume,
+        };
+        let mut last = -1.0;
+        Current::export_recording(&job, &mut |fraction| {
+            if fraction - last >= 0.01 || fraction >= 1.0 {
+                last = fraction;
+                let _ = progress.send(fraction);
+            }
+        })?;
+        Ok(job.destination)
+    })
+    .await
 }
 
 struct TauriPreviewEvents {
