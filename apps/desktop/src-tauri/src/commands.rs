@@ -314,6 +314,9 @@ impl RecorderEvents for TauriRecorderEvents {
 
     fn finished(&self, outcome: &RecordingOutcome) {
         let _ = self.0.emit(EVENT_FINISHED, outcome);
+        // The review step happens in the window; bring it forward even if the
+        // recording was stopped from the menu bar with the window closed.
+        crate::tray::show_main_window(&self.0);
     }
 }
 

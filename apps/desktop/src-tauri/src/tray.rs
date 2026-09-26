@@ -253,7 +253,10 @@ pub fn set_tray_indicator(
             }
         }
     }
-    tray.set_title(title.as_deref()).map_err(tray_error)
+    // On macOS `set_title(None)` leaves the previous text in place; an empty
+    // string actually clears it.
+    tray.set_title(Some(title.as_deref().unwrap_or("")))
+        .map_err(tray_error)
 }
 
 #[cfg(test)]
