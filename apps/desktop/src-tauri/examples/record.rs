@@ -4,6 +4,8 @@
 //!
 //! ```sh
 //! cargo run --release --example record -- --seconds 5 --camera --microphone
+//! # camera as a square centered at 25% / 30% of the frame, 30% of its height:
+//! cargo run --release --example record -- --camera --overlay square:0.25:0.3:0.3
 //! ```
 
 use std::path::PathBuf;
@@ -31,6 +33,23 @@ impl RecorderEvents for PrintEvents {
     }
     fn finished(&self, outcome: &RecordingOutcome) {
         eprintln!("finished: {outcome:?}");
+    }
+}
+
+/// Parses `shape:x:y:size`, e.g. `circle:0.9:0.85:0.25`.
+fn parse_overlay(spec: &str) -> CameraOverlay {
+    let parts: Vec<&str> = spec.split(':').collect();
+    let number = |i: usize| parts.get(i).and_then(|v| v.parse().ok());
+    let default = CameraOverlay::default();
+    CameraOverlay {
+        shape: match parts.first().copied() {
+            Some("square") => OverlayShape::Square,
+            Some("rectangle") => OverlayShape::Rectangle,
+            _ => OverlayShape::Circle,
+        },
+        x: number(1).unwrap_or(default.x),
+        y: number(2).unwrap_or(default.y),
+        size: number(3).unwrap_or(default.size),
     }
 }
 
@@ -68,8 +87,11 @@ fn main() {
     let config = RecordingConfig {
         source: CaptureSource::Display { id: display.id },
         camera: flag("--camera").then(|| CameraConfig {
-            device_id: cameras.first().expect("a camera").id.clone(),
-            overlay: CameraOverlay::default(),
+            device_id: value("--camera-id")
+                .or_else(|| cameras.iter().find(|c| c.is_default).map(|c| c.id.clone()))
+                .unwrap_or_else(|| cameras.first().expect("a camera").id.clone()),
+            overlay: value("--overlay")
+                .map_or_else(CameraOverlay::default, |spec| parse_overlay(&spec)),
         }),
         microphone: flag("--microphone").then(|| MicrophoneConfig {
             device_id: microphones
