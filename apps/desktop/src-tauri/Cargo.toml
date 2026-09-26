@@ -6,7 +6,7 @@ authors = ["CodeTake contributors"]
 license = "MIT"
 repository = "https://github.com/sebastianfelipe/codetake"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.85"
 
 [lib]
 name = "codetake_lib"
