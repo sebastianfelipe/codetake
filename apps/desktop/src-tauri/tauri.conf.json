@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "CodeTake",
-        "width": 960,
-        "height": 720,
-        "minWidth": 760,
-        "minHeight": 560
+        "width": 1040,
+        "height": 760,
+        "minWidth": 880,
+        "minHeight": 620
       }
     ],
     "security": {
@@ -32,6 +32,23 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../../../assets/music/": "music/"
+    },
+    "category": "Video",
+    "shortDescription": "Record your code.",
+    "longDescription": "A free, open-source, local-first screen and webcam recorder for developers.",
+    "copyright": "\u00a9 2026 CodeTake contributors. MIT License.",
+    "license": "MIT",
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "entitlements": "./Entitlements.plist"
+    },
+    "linux": {
+      "deb": {
+        "section": "video"
+      }
+    }
   }
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSCameraUsageDescription</key>
+  <string>CodeTake shows your webcam as an overlay in your recordings. Video stays on your Mac.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>CodeTake records your voice with your screen. Audio stays on your Mac.</string>
+</dict>
+</plist>

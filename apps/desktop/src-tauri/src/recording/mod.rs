@@ -2,6 +2,7 @@
 
 pub mod capture;
 pub mod clock;
+pub mod preview;
 pub mod recorder;
 pub mod session;
 pub mod state;
