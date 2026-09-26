@@ -52,24 +52,68 @@ function status(): RecordingStatus {
   };
 }
 
-/** A gradient "screen" and a flat "camera" frame, in the binary preview format. */
-function frame(kind: 0 | 1, width: number, height: number): ArrayBuffer {
-  const buffer = new ArrayBuffer(8 + width * height * 4);
+/** Encodes RGBA pixels in the binary preview format. */
+function encodeFrame(kind: 0 | 1, image: ImageData): ArrayBuffer {
+  const buffer = new ArrayBuffer(8 + image.data.length);
   const header = new DataView(buffer, 0, 8);
   header.setUint8(0, kind);
-  header.setUint16(2, width, true);
-  header.setUint16(4, height, true);
-  const pixels = new Uint8ClampedArray(buffer, 8);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
-      pixels[i] = kind === 0 ? 20 + (x / width) * 40 : 90;
-      pixels[i + 1] = kind === 0 ? 24 + (y / height) * 40 : 140;
-      pixels[i + 2] = kind === 0 ? 60 : 200;
-      pixels[i + 3] = 255;
-    }
-  }
+  header.setUint16(2, image.width, true);
+  header.setUint16(4, image.height, true);
+  new Uint8ClampedArray(buffer, 8).set(image.data);
   return buffer;
+}
+
+/** A synthetic code editor, drawn with shapes (no real screen content). */
+function sampleScreen(width: number, height: number): ImageData {
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
+  ctx.fillStyle = "#1b1e28";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#15171f";
+  ctx.fillRect(0, 0, width * 0.18, height);
+  ctx.fillStyle = "#232735";
+  ctx.fillRect(0, 0, width, height * 0.05);
+  const colors = ["#7aa2f7", "#bb9af7", "#9ece6a", "#e0af68", "#7dcfff", "#c0caf5"];
+  let seed = 7;
+  const random = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  for (let row = 0; row < 26; row++) {
+    const y = height * 0.08 + row * height * 0.034;
+    let x = width * 0.22 + (row % 5 === 0 ? 0 : (1 + Math.floor(random() * 3)) * width * 0.025);
+    for (let token = 0; token < 1 + Math.floor(random() * 5); token++) {
+      const w = width * (0.03 + random() * 0.09);
+      ctx.fillStyle = colors[Math.floor(random() * colors.length)] ?? "#c0caf5";
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(x, y, w, height * 0.014);
+      x += w + width * 0.012;
+    }
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = "#c0caf5";
+    ctx.fillRect(width * 0.02, y, width * (0.06 + random() * 0.08), height * 0.012);
+  }
+  ctx.globalAlpha = 1;
+  return ctx.getImageData(0, 0, width, height);
+}
+
+/** A soft placeholder where the webcam image would be. */
+function sampleCamera(width: number, height: number): ImageData {
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, "#3fd8ff");
+  gradient.addColorStop(1, "#8a5cff");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+  ctx.beginPath();
+  ctx.arc(width / 2, height * 0.42, height * 0.17, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(width / 2, height * 0.95, width * 0.3, height * 0.3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  return ctx.getImageData(0, 0, width, height);
 }
 
 export function installMockBackend(): void {
@@ -140,8 +184,8 @@ export function installMockBackend(): void {
         case "start_preview": {
           const channel = payload.frames as Channel<ArrayBuffer> | undefined;
           window.setTimeout(() => {
-            channel?.onmessage(frame(0, 480, 312));
-            channel?.onmessage(frame(1, 160, 120));
+            channel?.onmessage(encodeFrame(0, sampleScreen(960, 624)));
+            channel?.onmessage(encodeFrame(1, sampleCamera(320, 240)));
           }, 50);
           return null;
         }

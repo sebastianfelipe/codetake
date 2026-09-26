@@ -13,6 +13,11 @@ CodeTake does one thing: record you coding — your screen, your webcam and
 your voice — into a normal MP4 on your own disk. Configure, press Record,
 press Stop, done. It is not a video editor.
 
+<p align="center">
+  <img src="docs/images/codetake.png" alt="The CodeTake window: recording settings on the left, a live preview of the screen with the webcam overlay on the right, and the Record button" width="820">
+  <br><sub>The preview shows sample content in this screenshot.</sub>
+</p>
+
 ## Features
 
 - **Screen capture** of a whole display or a single window, at the source's
