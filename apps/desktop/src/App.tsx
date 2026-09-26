@@ -14,11 +14,13 @@ import {
   type SetupContext,
   validateSetup,
 } from "./features/settings/validation";
+import { buildTrayState, trayTitle } from "./features/tray/trayState";
 import { useBackend } from "./hooks/useBackend";
 import { usePreview } from "./hooks/usePreview";
 import { useRecording } from "./hooks/useRecording";
 import { useSettings } from "./hooks/useSettings";
-import { api, events } from "./lib/api";
+import { useVisible } from "./hooks/useVisible";
+import { api, events, type TrayAction } from "./lib/api";
 import { displayPath, recordingPath } from "./lib/outputPath";
 import type { PermissionKind } from "./types/backend";
 
@@ -72,7 +74,9 @@ export function App() {
   const recording = useRecording(buildConfig, preset.countdown);
   const { view } = recording;
   const busy = isBusy(view);
+  const visible = useVisible();
   const previewEnabled =
+    visible &&
     settings.loaded &&
     !!data &&
     (view.phase === "idle" || view.phase === "countdown" || view.phase === "finished");
@@ -105,21 +109,62 @@ export function App() {
       .catch(() => {});
   }, [outputDirectory]);
 
-  // Global shortcut: start when idle, stop when recording.
-  const shortcutRef = useRef(() => {});
-  shortcutRef.current = () => {
-    if (canRecord(view)) {
-      if (issues.length === 0) recording.record();
-    } else if (view.phase === "recording" || view.phase === "paused") {
-      recording.stop();
-    } else if (view.phase === "countdown") {
-      recording.cancelCountdown();
+  // Global shortcut and the menu bar icon drive the same actions.
+  const lastSavedPath = view.phase === "finished" ? view.outcome.path : null;
+  const actionsRef = useRef<(action: TrayAction | "toggle") => void>(() => {});
+  actionsRef.current = (action) => {
+    switch (action) {
+      case "toggle":
+        if (canRecord(view)) {
+          if (issues.length === 0) recording.record();
+        } else if (view.phase === "recording" || view.phase === "paused") {
+          recording.stop();
+        } else if (view.phase === "countdown") {
+          recording.cancelCountdown();
+        }
+        break;
+      case "record":
+        if (canRecord(view) && issues.length === 0) recording.record();
+        break;
+      case "stop":
+        if (view.phase === "recording" || view.phase === "paused") recording.stop();
+        break;
+      case "pause":
+        if (view.phase === "recording") recording.pause();
+        break;
+      case "resume":
+        if (view.phase === "paused") recording.resume();
+        break;
+      case "cancelCountdown":
+        recording.cancelCountdown();
+        break;
+      case "showFolder": {
+        const target = lastSavedPath ?? outputDirectory;
+        if (target) void revealItemInDir(target).catch(() => {});
+        break;
+      }
     }
   };
   useEffect(() => {
-    const unlisten = events.toggleShortcut(() => shortcutRef.current());
-    return () => void unlisten.then((fn) => fn());
+    const unlisteners = [
+      events.toggleShortcut(() => actionsRef.current("toggle")),
+      events.trayAction((action) => actionsRef.current(action)),
+    ];
+    return () => {
+      for (const unlisten of unlisteners) void unlisten.then((fn) => fn());
+    };
   }, []);
+
+  // Keep the menu bar icon in sync. The menu is only rebuilt when it
+  // changes (rebuilding closes an open menu); the title follows the timer.
+  const trayState = data ? JSON.stringify(buildTrayState(view, preset, data, issues)) : null;
+  useEffect(() => {
+    if (trayState) void api.updateTray(JSON.parse(trayState)).catch(() => {});
+  }, [trayState]);
+  const title = trayTitle(view);
+  useEffect(() => {
+    void api.setTrayTitle(title).catch(() => {});
+  }, [title]);
 
   if (backend.fatal) {
     return (

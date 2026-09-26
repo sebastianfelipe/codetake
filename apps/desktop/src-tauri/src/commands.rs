@@ -13,7 +13,7 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::capabilities::PlatformCapabilities;
-use crate::config::{resolution_is_available, RecordingConfig, Resolution, Size};
+use crate::config::RecordingConfig;
 use crate::devices::{CameraInfo, DisplayInfo, MicrophoneInfo, WindowInfo};
 use crate::error::{AppError, AppResult};
 use crate::music::{self, MusicTrack};
@@ -83,21 +83,6 @@ pub async fn list_cameras() -> AppResult<Vec<CameraInfo>> {
 #[tauri::command]
 pub async fn list_microphones() -> AppResult<Vec<MicrophoneInfo>> {
     blocking(Current::microphones).await
-}
-
-/// Which resolution presets make sense for a source of the given size.
-#[tauri::command]
-pub fn available_resolutions(width: u32, height: u32) -> Vec<Resolution> {
-    let source = Size::new(width, height);
-    [
-        Resolution::Source,
-        Resolution::P1080,
-        Resolution::P1440,
-        Resolution::P2160,
-    ]
-    .into_iter()
-    .filter(|r| resolution_is_available(source, *r))
-    .collect()
 }
 
 fn music_dir(app: &AppHandle) -> AppResult<PathBuf> {
@@ -309,6 +294,36 @@ pub async fn pause_recording(app: AppHandle) -> AppResult<()> {
 #[tauri::command]
 pub async fn resume_recording(app: AppHandle) -> AppResult<()> {
     blocking(move || with_recording(&app, RecordingHandle::resume)).await
+}
+
+/// Stops and finalizes a running recording, if any; used before quitting.
+/// Returns whether there was one.
+pub fn finish_active_recording(app: &AppHandle) -> bool {
+    let handle = app.state::<AppState>().recording.lock().take();
+    match handle {
+        Some(handle) if !handle.is_finished() => {
+            if let Err(error) = handle.stop() {
+                log::error!("could not finalize the recording before quitting: {error}");
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Releases the camera and microphone used by the preview (e.g. when the
+/// window is hidden, so the camera light turns off).
+pub fn release_preview(app: &AppHandle) {
+    drop(app.state::<AppState>().preview.lock().take());
+}
+
+/// Whether a recording is currently running.
+pub fn is_recording(app: &AppHandle) -> bool {
+    app.state::<AppState>()
+        .recording
+        .lock()
+        .as_ref()
+        .is_some_and(|r| !r.is_finished())
 }
 
 /// Stops the recording and waits until the MP4 is written.

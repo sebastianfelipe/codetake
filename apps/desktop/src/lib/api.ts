@@ -2,6 +2,7 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { TrayState } from "../features/tray/trayState";
 import type {
   BackendError,
   CameraInfo,
@@ -47,7 +48,11 @@ export const api = {
   resumeRecording: () => invoke<void>("resume_recording"),
   stopRecording: () => invoke<RecordingOutcome>("stop_recording"),
   stopPreview: () => invoke<void>("stop_preview"),
+  updateTray: (state: TrayState) => invoke<void>("update_tray", { state }),
+  setTrayTitle: (title: string | null) => invoke<void>("set_tray_title", { title }),
 };
+
+export type TrayAction = "record" | "stop" | "pause" | "resume" | "cancelCountdown" | "showFolder";
 
 export interface PreviewRequest {
   source: CaptureSource | null;
@@ -106,6 +111,8 @@ export const events = {
     ),
   toggleShortcut: (handler: () => void): Promise<UnlistenFn> =>
     listen("shortcut://toggle-recording", () => handler()),
+  trayAction: (handler: (action: TrayAction) => void): Promise<UnlistenFn> =>
+    listen<TrayAction>("tray://action", (e) => handler(e.payload)),
 };
 
 /** Normalizes anything thrown by `invoke` into a backend error. */

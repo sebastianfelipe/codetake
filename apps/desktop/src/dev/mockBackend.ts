@@ -146,6 +146,8 @@ export function installMockBackend(): void {
           return null;
         }
         case "stop_preview":
+        case "update_tray":
+        case "set_tray_title":
           return null;
         case "start_recording":
           recording = { startedAt: Date.now(), pausedAt: null, pausedMs: 0 };

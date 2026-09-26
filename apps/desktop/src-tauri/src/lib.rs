@@ -9,9 +9,10 @@ pub mod output;
 pub mod permissions;
 pub mod platform;
 pub mod recording;
+pub mod tray;
 pub mod video;
 
-use tauri::Emitter;
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 /// Emitted when the global record shortcut is pressed; the UI decides
 /// whether that starts or stops a recording.
@@ -34,16 +35,42 @@ fn register_shortcut(app: &tauri::App) {
     }
 }
 
+/// Quits the app, finalizing a running recording first so it is never lost.
+pub fn quit(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        commands::finish_active_recording(&app);
+        app.exit(0);
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    // Warnings and errors go to stderr (RUST_LOG=debug for more detail).
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(commands::AppState::default())
         .setup(|app| {
             register_shortcut(app);
+            if let Err(error) = tray::create(app.handle()) {
+                log::warn!("could not create the menu bar icon: {error}");
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window keeps CodeTake running in the menu bar,
+            // so a recording can continue and be controlled from there.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.app_handle().tray_by_id(tray::TRAY_ID).is_some() {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    commands::release_preview(window.app_handle());
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_capabilities,
@@ -54,7 +81,6 @@ pub fn run() {
             commands::list_windows,
             commands::list_cameras,
             commands::list_microphones,
-            commands::available_resolutions,
             commands::list_music_tracks,
             commands::default_output_directory,
             commands::recover_recordings,
@@ -66,7 +92,23 @@ pub fn run() {
             commands::pause_recording,
             commands::resume_recording,
             commands::stop_recording,
+            tray::update_tray,
+            tray::set_tray_title,
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("failed to start the CodeTake application");
+
+    app.run(|app, event| match event {
+        // Cmd+Q or quitting from the Dock while recording: finalize first.
+        RunEvent::ExitRequested { api, code, .. } if code.is_none() => {
+            if commands::is_recording(app) {
+                api.prevent_exit();
+                quit(app);
+            }
+        }
+        // Clicking the Dock icon brings the hidden window back.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => tray::show_main_window(app),
+        _ => {}
+    });
 }

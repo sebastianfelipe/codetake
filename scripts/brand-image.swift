@@ -3,11 +3,15 @@
 //
 //   swift scripts/brand-image.swift profile <src> <row|col> <index>
 //   swift scripts/brand-image.swift crop <src> <dst> <x> <y> <w> <h> [radius] [canvas] [inset]
+//   swift scripts/brand-image.swift template <src> <dst>
 //
 // `crop` cuts the rectangle out of the source. With `radius`, pixels outside
 // a rounded rectangle of that corner radius become transparent. With
 // `canvas`, the result is centred on a transparent square canvas of that
 // size, `inset` pixels from each edge (the macOS icon grid uses 100 of 1024).
+//
+// `template` turns light artwork on a dark background into a macOS menu bar
+// template image: black pixels whose opacity follows the source brightness.
 
 import AppKit
 import CoreGraphics
@@ -80,6 +84,19 @@ case "crop":
     }
     save(cropped, args[3])
     print("wrote \(args[3]) (\(cropped.width)x\(cropped.height))")
+case "template":
+    let image = load(args[2])
+    let (data, ctx) = rgba(image)
+    for i in 0..<(image.width * image.height) {
+        let p = i * 4
+        let lum = (0.2126 * Double(data[p]) + 0.7152 * Double(data[p + 1]) + 0.0722 * Double(data[p + 2]))
+        // Background is dark (≈20); map 40…230 to fully transparent…opaque.
+        let alpha = min(1, max(0, (lum - 40) / 190)) * Double(data[p + 3]) / 255
+        data[p] = 0; data[p + 1] = 0; data[p + 2] = 0
+        data[p + 3] = UInt8((alpha * 255).rounded())
+    }
+    save(ctx.makeImage()!, args[3])
+    print("wrote \(args[3])")
 default:
     print("unknown command")
 }
