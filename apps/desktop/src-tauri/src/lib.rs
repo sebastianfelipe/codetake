@@ -2,6 +2,7 @@ pub mod config;
 pub mod error;
 pub mod output;
 pub mod permissions;
+pub mod recording;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
