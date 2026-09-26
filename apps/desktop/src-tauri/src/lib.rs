@@ -1,5 +1,6 @@
 pub mod config;
 pub mod error;
+pub mod output;
 pub mod permissions;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
