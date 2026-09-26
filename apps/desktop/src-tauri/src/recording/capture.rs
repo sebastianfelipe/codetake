@@ -77,6 +77,10 @@ pub struct EncoderSettings {
     pub fps: Fps,
     pub video_bitrate: u32,
     pub audio: bool,
+    /// Live recording: crash-safe intermediate file, frames are dropped
+    /// rather than blocking capture. Otherwise (exports): a plain MP4, and
+    /// appends wait for the encoder instead of dropping anything.
+    pub live: bool,
 }
 
 /// Writes H.264/AAC into an MP4 file progressively.

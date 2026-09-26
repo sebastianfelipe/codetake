@@ -37,6 +37,8 @@ struct Behaviour {
 #[derive(Default)]
 struct EncoderLog {
     video_times: Vec<f64>,
+    camera_times: Vec<f64>,
+    camera_pixel: Option<[u8; 4]>,
     audio_frames: usize,
     audio_times: Vec<f64>,
     finished_at: Option<f64>,
@@ -198,6 +200,7 @@ impl MicrophoneCapture for FakeMicrophone {
 struct FakeEncoder {
     path: PathBuf,
     frames: usize,
+    camera: bool,
 }
 
 impl VideoEncoder for FakeEncoder {
@@ -207,6 +210,19 @@ impl VideoEncoder for FakeEncoder {
         fill: &mut dyn FnMut(&mut BgraMut<'_>),
     ) -> AppResult<bool> {
         self.frames += 1;
+        if self.camera {
+            let mut data = vec![0u8; 32 * 24 * 4];
+            fill(&mut BgraMut {
+                data: &mut data,
+                width: 32,
+                height: 24,
+                stride: 32 * 4,
+            });
+            let mut log = log().lock();
+            log.camera_times.push(media_time);
+            log.camera_pixel = Some([data[0], data[1], data[2], data[3]]);
+            return Ok(true);
+        }
         if behaviour()
             .lock()
             .encoder_fails_at_frame
@@ -301,6 +317,10 @@ impl Platform for FakePlatform {
         Ok(Box::new(FakeEncoder {
             path: settings.path.clone(),
             frames: 0,
+            camera: settings
+                .path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().contains("-camera")),
         }))
     }
     fn finalize_recording(intermediate: &Path, destination: &Path) -> AppResult<()> {
@@ -373,11 +393,15 @@ fn reset(b: Behaviour) {
     *log().lock() = EncoderLog::default();
 }
 
+/// Names of all files (not folders) under `dir`, recursively.
 fn files_in(dir: &Path) -> Vec<String> {
     let mut names = Vec::new();
-    for day in fs::read_dir(dir).unwrap().flatten() {
-        for f in fs::read_dir(day.path()).unwrap().flatten() {
-            names.push(f.file_name().to_string_lossy().into_owned());
+    for entry in fs::read_dir(dir).unwrap().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            names.extend(files_in(&path));
+        } else {
+            names.push(entry.file_name().to_string_lossy().into_owned());
         }
     }
     names
@@ -512,19 +536,20 @@ fn pausing_removes_time_from_the_recording() {
 }
 
 #[test]
-fn composites_the_camera_over_the_screen() {
+fn records_the_camera_to_its_own_file_in_sync_with_the_screen() {
     let _guard = serial();
     reset(Behaviour::default());
     let dir = temp_dir("camera");
     let mut config = config(&dir);
+    let overlay = CameraOverlay {
+        shape: OverlayShape::Rectangle,
+        size: 0.5,
+        x: 1.0,
+        y: 1.0,
+    };
     config.camera = Some(CameraConfig {
         device_id: "cam".into(),
-        overlay: CameraOverlay {
-            shape: OverlayShape::Rectangle,
-            size: 0.5,
-            x: 1.0,
-            y: 1.0,
-        },
+        overlay,
     });
     let handle = recorder::start::<FakePlatform>(
         StartRequest {
@@ -534,9 +559,34 @@ fn composites_the_camera_over_the_screen() {
         Arc::new(Events::default()),
     )
     .unwrap();
-    thread::sleep(Duration::from_millis(300));
-    handle.stop().unwrap();
-    assert_eq!(log().lock().overlay_pixel, Some([0, 255, 0, 255]));
+    thread::sleep(Duration::from_millis(400));
+    let outcome = handle.stop().unwrap();
+
+    // The screen file contains only the screen...
+    assert_eq!(log().lock().overlay_pixel, Some([10, 20, 30, 255]));
+    // ...and the camera has its own file, with the screen's timestamps.
+    let log = log().lock();
+    assert!(
+        log.camera_times.len() > 3,
+        "{} camera frames",
+        log.camera_times.len()
+    );
+    assert!(log.camera_times.iter().all(|t| log.video_times.contains(t)));
+    assert_eq!(log.camera_pixel, Some([0, 255, 0, 255]));
+    drop(log);
+
+    let screen = outcome.path.unwrap();
+    let camera = outcome.camera_path.unwrap();
+    assert!(screen.to_string_lossy().ends_with("-screen.mp4"));
+    assert!(camera.to_string_lossy().ends_with("-camera.mp4"));
+    assert!(screen.parent().unwrap().ends_with("raw"));
+    assert!(camera.exists());
+    assert_eq!(outcome.overlay, Some(overlay));
+    assert!(outcome.export_path.to_string_lossy().ends_with(".mp4"));
+    assert!(
+        !outcome.export_path.exists(),
+        "the review step exports the final video"
+    );
     fs::remove_dir_all(dir).unwrap();
 }
 

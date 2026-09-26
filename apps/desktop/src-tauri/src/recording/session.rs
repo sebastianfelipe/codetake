@@ -10,7 +10,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 
 use crate::config::{CaptureSource, Fps, RecordingConfig, Resolution, Size};
-use crate::output::OutputPlan;
+use crate::output::RecordingFiles;
 
 #[derive(Debug, Clone)]
 pub struct RecordingSession {
@@ -19,7 +19,7 @@ pub struct RecordingSession {
     pub output_size: Size,
     pub video_bitrate: u32,
     pub started_at: DateTime<Local>,
-    pub output: OutputPlan,
+    pub output: RecordingFiles,
 }
 
 /// What the UI needs to know about a session.
@@ -50,7 +50,7 @@ impl RecordingSession {
             fps: self.config.fps,
             output_size: self.output_size,
             started_at: self.started_at.to_rfc3339(),
-            output_path: self.output.final_path.clone(),
+            output_path: self.output.export_path.clone(),
         }
     }
 }

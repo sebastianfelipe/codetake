@@ -127,6 +127,84 @@ pub fn plan_output(
     }
 }
 
+/// Name of the folder (inside each day) holding the raw recordings.
+pub const RAW_FOLDER: &str = "raw";
+
+/// The files of one recording session: the raw screen and camera
+/// recordings, and the final video that the review step exports.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordingFiles {
+    /// `<day>/raw/<name>-screen.mp4` — screen, microphone and system audio.
+    pub screen: OutputPlan,
+    /// `<day>/raw/<name>-camera.mp4` — the webcam, when enabled.
+    pub camera: Option<OutputPlan>,
+    /// `<day>/<name>.mp4` — where the finished video is exported.
+    pub export_path: PathBuf,
+}
+
+/// Plans the files for a recording started at `time`.
+pub fn plan_recording(
+    base: &Path,
+    time: &DateTime<Local>,
+    intermediate: &str,
+    with_camera: bool,
+    exists: impl Fn(&Path) -> bool,
+) -> RecordingFiles {
+    let day = base.join(date_folder_name(time));
+    let raw = day.join(RAW_FOLDER);
+    let stem = recording_file_stem(time);
+    let file = |name: &str, kind: &str| OutputPlan {
+        final_path: raw.join(format!("{name}-{kind}.mp4")),
+        partial_path: raw.join(format!("{name}-{kind}{PARTIAL_MARKER}{intermediate}")),
+    };
+
+    let mut counter = 1;
+    loop {
+        let name = if counter == 1 {
+            stem.clone()
+        } else {
+            format!("{stem}-{counter}")
+        };
+        let files = RecordingFiles {
+            screen: file(&name, "screen"),
+            camera: with_camera.then(|| file(&name, "camera")),
+            export_path: day.join(format!("{name}.mp4")),
+        };
+        let mut candidates = vec![files.export_path.clone()];
+        for plan in std::iter::once(&files.screen).chain(files.camera.iter()) {
+            candidates.extend([
+                plan.final_path.clone(),
+                plan.partial_path.clone(),
+                plan.fallback_path(),
+                plan.incomplete_path(),
+            ]);
+        }
+        if !candidates.iter().any(|p| exists(p)) {
+            return files;
+        }
+        counter += 1;
+    }
+}
+
+/// A free file name next to `path`: `name.mp4`, then `name-2.mp4`, ...
+pub fn unique_path(path: &Path, exists: impl Fn(&Path) -> bool) -> PathBuf {
+    if !exists(path) {
+        return path.to_path_buf();
+    }
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let extension = path
+        .extension()
+        .map(|e| e.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "mp4".into());
+    (2..)
+        .map(|n| path.with_file_name(format!("{stem}-{n}.{extension}")))
+        .find(|candidate| !exists(candidate))
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
 /// Creates the dated folder and checks that it is writable and has room.
 pub fn prepare_output(plan: &OutputPlan, free_space: Option<u64>) -> AppResult<()> {
     let folder = plan
@@ -190,8 +268,11 @@ pub fn find_partial_recordings(base: &Path) -> Vec<PathBuf> {
     let Ok(days) = fs::read_dir(base) else {
         return found;
     };
-    for day in days.flatten() {
-        let Ok(entries) = fs::read_dir(day.path()) else {
+    let folders = days
+        .flatten()
+        .flat_map(|day| [day.path(), day.path().join(RAW_FOLDER)]);
+    for folder in folders {
+        let Ok(entries) = fs::read_dir(folder) else {
             continue;
         };
         for entry in entries.flatten() {
@@ -345,6 +426,56 @@ mod tests {
     }
 
     #[test]
+    fn plans_raw_screen_and_camera_files_and_the_export_target() {
+        let files = plan_recording(Path::new("/rec"), &time(), "mov", true, |_| false);
+        let day = PathBuf::from("/rec/2026-09-26");
+        let raw = day.join("raw");
+        assert_eq!(
+            files.screen.final_path,
+            raw.join("coding-session-2026-09-26-09-32-14-screen.mp4")
+        );
+        assert_eq!(
+            files.screen.partial_path,
+            raw.join("coding-session-2026-09-26-09-32-14-screen.partial.mov")
+        );
+        assert_eq!(
+            files.camera.unwrap().final_path,
+            raw.join("coding-session-2026-09-26-09-32-14-camera.mp4")
+        );
+        assert_eq!(
+            files.export_path,
+            day.join("coding-session-2026-09-26-09-32-14.mp4")
+        );
+        let without_camera = plan_recording(Path::new("/rec"), &time(), "mov", false, |_| false);
+        assert!(without_camera.camera.is_none());
+    }
+
+    #[test]
+    fn recording_names_avoid_existing_exports_and_raw_files() {
+        let taken = PathBuf::from("/rec/2026-09-26/coding-session-2026-09-26-09-32-14.mp4");
+        let files = plan_recording(Path::new("/rec"), &time(), "mov", false, |p| p == taken);
+        assert!(files
+            .export_path
+            .to_string_lossy()
+            .ends_with("coding-session-2026-09-26-09-32-14-2.mp4"));
+        assert!(files
+            .screen
+            .final_path
+            .to_string_lossy()
+            .ends_with("-14-2-screen.mp4"));
+    }
+
+    #[test]
+    fn unique_paths_add_a_counter() {
+        let path = Path::new("/rec/video.mp4");
+        assert_eq!(unique_path(path, |_| false), path);
+        assert_eq!(
+            unique_path(path, |p| p == path),
+            PathBuf::from("/rec/video-2.mp4")
+        );
+    }
+
+    #[test]
     fn prepare_creates_folder_and_rejects_low_disk_space() {
         let base = temp_dir("prepare");
         let plan = plan_output(&base, &time(), "mp4", |p| p.exists());
@@ -404,11 +535,21 @@ mod tests {
         fs::write(day.join("coding-session-c.mp4"), b"done").unwrap();
         fs::write(day.join("notes.partial.txt"), b"not ours").unwrap();
 
+        let raw = day.join("raw");
+        fs::create_dir_all(&raw).unwrap();
+        fs::write(raw.join("coding-session-d-camera.partial.mov"), b"media").unwrap();
+
         let recovered = recover_partial_recordings(&base, |from, to| {
             fs::copy(from, to)?;
             Ok(())
         });
-        assert_eq!(recovered, vec![day.join("coding-session-a-recovered.mp4")]);
+        assert_eq!(
+            recovered,
+            vec![
+                day.join("coding-session-a-recovered.mp4"),
+                raw.join("coding-session-d-camera-recovered.mp4"),
+            ]
+        );
         assert!(!day.join("coding-session-a.partial.mov").exists());
         assert!(!day.join("coding-session-b.partial.mov").exists());
         assert!(day.join("coding-session-c.mp4").exists());

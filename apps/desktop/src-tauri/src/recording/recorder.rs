@@ -1,14 +1,17 @@
-//! Runs a recording: drives the captures, the compositor, the mixer and the
-//! encoder, and finalizes the file.
+//! Runs a recording: drives the captures, the mixer and the encoders, and
+//! finalizes the raw files.
 //!
 //! ```text
-//! ScreenCapture ──▶ latest screen frame ─┐
-//! CameraCapture ──▶ latest camera frame ─┼─▶ video thread (fixed fps) ─┐
-//!                                        │                              ├─▶ VideoEncoder ─▶ MP4
-//! MicrophoneCapture ─┐                   │                              │
-//! SystemAudioCapture ┼─▶ AudioMixer ◀─ music                            │
-//!                    └──────────────────▶ audio thread (every 20 ms) ───┘
+//! ScreenCapture ──▶ latest screen frame ─┐                 ┌─▶ screen encoder ─▶ <name>-screen.mp4
+//! CameraCapture ──▶ latest camera frame ─┴▶ video thread ──┤        ▲
+//!                                           (fixed fps)    └─▶ camera encoder ─▶ <name>-camera.mp4
+//! MicrophoneCapture ─┐                                              │
+//! SystemAudioCapture ┴─▶ AudioMixer ─▶ audio thread (every 20 ms) ──┘
 //! ```
+//!
+//! The webcam is recorded as its own file with the same timestamps as the
+//! screen, so its position, size and shape can still be changed in the
+//! review step; the export composites it (see `crate::export`).
 //!
 //! A supervisor thread owns the capture objects. It handles pause, resume and
 //! stop commands, publishes status updates, and stops the recording on its
@@ -34,11 +37,11 @@ use super::clock::MediaClock;
 use super::session::{RecordingSession, SessionSummary};
 use super::state::{RecordingEvent, RecordingState};
 use crate::audio::mixer::{AudioMixer, MixerConfig, MusicTrack, SourceKind};
-use crate::config::{output_size, video_bitrate, RecordingConfig};
+use crate::config::{output_size, video_bitrate, CameraOverlay, Fps, RecordingConfig, Size};
 use crate::error::{AppError, AppResult};
 use crate::output::{self, OutputPlan};
 use crate::platform::Platform;
-use crate::video::compositor::{self, BgraMut, Mask, Rect};
+use crate::video::compositor::{self, BgraMut};
 
 /// How far behind real time the mixer runs, giving late audio a chance to arrive.
 const AUDIO_LATENCY: f64 = 0.2;
@@ -63,8 +66,16 @@ pub struct RecordingStatus {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingOutcome {
-    /// Where the video was saved, if any media was written.
+    /// The raw screen recording (screen, microphone, system audio), if any
+    /// media was written. Playable on its own.
     pub path: Option<PathBuf>,
+    /// The raw webcam recording, if the camera was enabled and delivered video.
+    pub camera_path: Option<PathBuf>,
+    /// Where the review step exports the finished video.
+    pub export_path: PathBuf,
+    /// The webcam layout chosen before recording (the review can change it).
+    pub overlay: Option<CameraOverlay>,
+    pub fps: u32,
     pub duration_ms: u64,
     /// False if the file could not be finalized cleanly.
     pub complete: bool,
@@ -84,9 +95,10 @@ struct Shared {
     clock: Mutex<Option<MediaClock>>,
     state: Mutex<RecordingState>,
     screen: Mutex<Option<SharedFrame>>,
-    camera: Mutex<Option<(SharedFrame, f64)>>,
+    camera_frame: Mutex<Option<(SharedFrame, f64)>>,
     mixer: Mutex<AudioMixer>,
     encoder: Mutex<Box<dyn VideoEncoder>>,
+    camera: Option<CameraRecording>,
     running: AtomicBool,
     /// Media time of the last encoded video frame.
     last_video_time: Mutex<Option<f64>>,
@@ -126,6 +138,57 @@ impl Shared {
     }
 }
 
+/// Writes the webcam to its own file. The encoder is created on the first
+/// camera frame, once the camera's resolution is known.
+struct CameraRecording {
+    plan: OutputPlan,
+    fps: Fps,
+    make_encoder: fn(&EncoderSettings) -> AppResult<Box<dyn VideoEncoder>>,
+    encoder: Mutex<Option<Box<dyn VideoEncoder>>>,
+    /// Set when camera recording failed; the screen recording continues.
+    failed: AtomicBool,
+}
+
+impl CameraRecording {
+    fn append(&self, shared: &Shared, frame: &SharedFrame, media_time: f64) {
+        if self.failed.load(Ordering::Acquire) {
+            return;
+        }
+        let mut encoder = self.encoder.lock();
+        if encoder.is_none() {
+            let even = |v: usize| (v.max(2) / 2 * 2) as u32;
+            let size = Size::new(even(frame.width()), even(frame.height()));
+            match (self.make_encoder)(&EncoderSettings {
+                path: self.plan.partial_path.clone(),
+                size,
+                fps: self.fps,
+                video_bitrate: video_bitrate(size, self.fps),
+                audio: false,
+                live: true,
+            }) {
+                Ok(created) => *encoder = Some(created),
+                Err(error) => return self.fail(shared, error),
+            }
+        }
+        let Some(active) = encoder.as_mut() else {
+            return;
+        };
+        let mut draw = |dst: &mut BgraMut<'_>| {
+            frame.read(&mut |src| compositor::copy_frame(src, dst));
+        };
+        if let Err(error) = active.append_video(media_time, &mut draw) {
+            self.fail(shared, error);
+        }
+    }
+
+    fn fail(&self, shared: &Shared, error: AppError) {
+        self.failed.store(true, Ordering::Release);
+        shared.warn(format!(
+            "The camera could not be recorded ({error}); the screen recording continues."
+        ));
+    }
+}
+
 struct ScreenSink(Arc<Shared>);
 
 impl VideoSink for ScreenSink {
@@ -142,7 +205,7 @@ struct CameraSink(Arc<Shared>, fn() -> f64);
 
 impl VideoSink for CameraSink {
     fn frame(&self, frame: SharedFrame, _host_time: f64) {
-        *self.0.camera.lock() = Some((frame, (self.1)()));
+        *self.0.camera_frame.lock() = Some((frame, (self.1)()));
     }
 
     fn error(&self, error: AppError) {
@@ -295,13 +358,17 @@ pub fn start<P: Platform>(
     let source_size = P::source_size(&config.source)?;
     let size = output_size(source_size, config.resolution);
     let started_at = Local::now();
-    let plan = output::plan_output(
+    let files = output::plan_recording(
         &config.output_directory,
         &started_at,
         P::INTERMEDIATE_EXTENSION,
+        config.camera.is_some(),
         |p| p.exists(),
     );
-    output::prepare_output(&plan, output::available_space(&config.output_directory))?;
+    output::prepare_output(
+        &files.screen,
+        output::available_space(&config.output_directory),
+    )?;
 
     let music = match (&config.music, &music_path) {
         (Some(music), Some(path)) => Some(MusicTrack {
@@ -322,30 +389,38 @@ pub fn start<P: Platform>(
         output_size: size,
         video_bitrate: video_bitrate(size, config.fps),
         started_at,
-        output: plan,
+        output: files,
         config,
     };
 
     let encoder = P::encoder(&EncoderSettings {
-        path: session.output.partial_path.clone(),
+        path: session.output.screen.partial_path.clone(),
         size,
         fps: session.config.fps,
         video_bitrate: session.video_bitrate,
         audio: session.config.has_audio(),
+        live: true,
     })
-    .inspect_err(|_| output::discard(&session.output))?;
+    .inspect_err(|_| output::discard(&session.output.screen))?;
 
     let shared = Arc::new(Shared {
         clock: Mutex::new(None),
         state: Mutex::new(RecordingState::Idle.next(RecordingEvent::Start)?),
         screen: Mutex::new(None),
-        camera: Mutex::new(None),
+        camera_frame: Mutex::new(None),
         mixer: Mutex::new(AudioMixer::new(MixerConfig {
             microphone_gain: session.config.microphone.as_ref().map(|_| 1.0),
             system_audio_gain: session.config.system_audio.then_some(1.0),
             music,
         })),
         encoder: Mutex::new(encoder),
+        camera: session.output.camera.clone().map(|plan| CameraRecording {
+            plan,
+            fps: session.config.fps,
+            make_encoder: P::encoder,
+            encoder: Mutex::new(None),
+            failed: AtomicBool::new(false),
+        }),
         running: AtomicBool::new(true),
         last_video_time: Mutex::new(None),
         failure: Mutex::new(None),
@@ -358,7 +433,10 @@ pub fn start<P: Platform>(
     if let Err(error) = start_captures::<P>(&session, &shared, &mut captures) {
         captures.stop();
         drop(shared);
-        output::discard(&session.output);
+        output::discard(&session.output.screen);
+        if let Some(camera) = &session.output.camera {
+            output::discard(camera);
+        }
         return Err(error);
     }
 
@@ -456,24 +534,13 @@ fn spawn_media_threads(
     shared: &Arc<Shared>,
     host_time: fn() -> f64,
 ) -> MediaThreads {
-    let overlay = session.config.camera.as_ref().map(|camera| {
-        let rect = compositor::overlay_rect(
-            session.output_size.width as usize,
-            session.output_size.height as usize,
-            &camera.overlay,
-        );
-        (
-            rect,
-            Mask::new(rect.width, rect.height, camera.overlay.shape),
-        )
-    });
     let fps = session.config.fps.as_u32();
 
     let video = {
         let shared = shared.clone();
         thread::Builder::new()
             .name("codetake-video".into())
-            .spawn(move || video_loop(&shared, fps, overlay, host_time))
+            .spawn(move || video_loop(&shared, fps, host_time))
             .expect("spawning a thread only fails when the OS is out of resources")
     };
     let audio = session.config.has_audio().then(|| {
@@ -493,10 +560,10 @@ fn sleep_until(host_time: fn() -> f64, target: f64) {
     }
 }
 
-/// Composes and encodes frames at a constant rate using the most recent
-/// screen and camera frames. Running at a fixed rate (rather than on screen
-/// updates) keeps the webcam moving even when the screen is static.
-fn video_loop(shared: &Shared, fps: u32, overlay: Option<(Rect, Mask)>, host_time: fn() -> f64) {
+/// Encodes the most recent screen and camera frames at a constant rate, with
+/// the same timestamp in both files. Running at a fixed rate (rather than
+/// on screen updates) keeps the webcam moving even when the screen is static.
+fn video_loop(shared: &Shared, fps: u32, host_time: fn() -> f64) {
     let interval = 1.0 / f64::from(fps);
     let mut next_tick = host_time();
     let mut last_media_time = f64::NEG_INFINITY;
@@ -520,7 +587,7 @@ fn video_loop(shared: &Shared, fps: u32, overlay: Option<(Rect, Mask)>, host_tim
             continue;
         };
         let camera = shared
-            .camera
+            .camera_frame
             .lock()
             .as_ref()
             .map(|(frame, _)| frame.clone());
@@ -534,9 +601,6 @@ fn video_loop(shared: &Shared, fps: u32, overlay: Option<(Rect, Mask)>, host_tim
                     compositor::scale_frame_nearest(src, dst);
                 }
             });
-            if let (Some(camera), Some((rect, mask))) = (&camera, &overlay) {
-                camera.read(&mut |src| compositor::blend_overlay(dst, src, *rect, mask, true));
-            }
         };
 
         let result = shared.encoder.lock().append_video(media_time, &mut draw);
@@ -544,6 +608,9 @@ fn video_loop(shared: &Shared, fps: u32, overlay: Option<(Rect, Mask)>, host_tim
             Ok(true) => {
                 last_media_time = media_time;
                 *shared.last_video_time.lock() = Some(media_time);
+                if let (Some(recording), Some(frame)) = (&shared.camera, &camera) {
+                    recording.append(shared, frame, media_time);
+                }
             }
             Ok(false) => log::debug!("encoder busy, dropped a frame at {media_time:.3}s"),
             Err(error) => {
@@ -669,7 +736,7 @@ impl Supervisor {
     }
 
     fn check_disk_space(&self) {
-        let free = output::available_space(&self.session.output.partial_path);
+        let free = output::available_space(&self.session.output.screen.partial_path);
         if free.is_some_and(|free| free < output::MIN_FREE_BYTES_WHILE_RECORDING) {
             self.shared.fail(AppError::Storage(
                 "the disk is almost full, so the recording was stopped and saved".into(),
@@ -683,13 +750,51 @@ impl Supervisor {
         }
         let now = (self.host_time)();
         let stale = |last: Option<f64>| last.is_some_and(|t| now - t > STALE_DEVICE_SECONDS);
-        if stale(self.shared.camera.lock().as_ref().map(|(_, t)| *t)) {
+        if stale(self.shared.camera_frame.lock().as_ref().map(|(_, t)| *t)) {
             self.shared
                 .warn("The camera stopped sending video. It may have been disconnected.");
         }
         if stale(*self.shared.last_microphone.lock()) {
             self.shared
                 .warn("The microphone stopped sending audio. It may have been disconnected.");
+        }
+    }
+
+    /// Converts a finished intermediate file to its final MP4, keeping the
+    /// original format if conversion fails.
+    fn finalize_file(&self, plan: &OutputPlan) -> Option<PathBuf> {
+        match (self.finalize_recording)(&plan.partial_path, &plan.final_path) {
+            Ok(()) => {
+                output::discard(plan);
+                Some(plan.final_path.clone())
+            }
+            Err(conversion_error) => {
+                let _ = std::fs::remove_file(&plan.final_path);
+                self.shared.warn(format!(
+                    "A recording file was kept in its original format because converting it \
+                     to MP4 failed: {conversion_error}"
+                ));
+                output::keep_fallback(plan)
+            }
+        }
+    }
+
+    /// Finalizes the webcam file, if the camera delivered any video.
+    fn finish_camera(&self, end_time: f64) -> Option<PathBuf> {
+        let recording = self.shared.camera.as_ref()?;
+        let encoder = recording.encoder.lock().take();
+        let Some(mut encoder) = encoder else {
+            output::discard(&recording.plan);
+            return None;
+        };
+        match encoder.finish(end_time) {
+            Ok(()) => self.finalize_file(&recording.plan),
+            Err(error) => {
+                self.shared.warn(format!(
+                    "The camera recording could not be finalized: {error}"
+                ));
+                output::keep_incomplete(&recording.plan)
+            }
         }
     }
 
@@ -731,31 +836,27 @@ impl Supervisor {
         // If the encoder finished the file it is complete and playable, even
         // when the recording ended early because of `error`.
         let mut error = error;
-        let plan: &OutputPlan = &self.session.output;
         let (path, complete) = match written {
-            Ok(()) => match (self.finalize_recording)(&plan.partial_path, &plan.final_path) {
-                Ok(()) => {
-                    output::discard(plan);
-                    (Some(plan.final_path.clone()), true)
-                }
-                Err(conversion_error) => {
-                    let _ = std::fs::remove_file(&plan.final_path);
-                    self.shared.warn(format!(
-                        "The recording was kept in its original format because converting it \
-                         to MP4 failed: {conversion_error}"
-                    ));
-                    (output::keep_fallback(plan), true)
-                }
-            },
+            Ok(()) => (self.finalize_file(&self.session.output.screen), true),
             Err(write_error) => {
                 error.get_or_insert(write_error);
-                (output::keep_incomplete(plan), false)
+                (output::keep_incomplete(&self.session.output.screen), false)
             }
         };
+        let camera_path = self.finish_camera(end_time);
 
         let _ = self.shared.transition(RecordingEvent::Finished);
         RecordingOutcome {
             path,
+            camera_path,
+            export_path: self.session.output.export_path.clone(),
+            overlay: self
+                .session
+                .config
+                .camera
+                .as_ref()
+                .map(|camera| camera.overlay),
+            fps: self.session.config.fps.as_u32(),
             duration_ms: (end_time * 1000.0) as u64,
             complete,
             error,

@@ -23,8 +23,8 @@ use objc2::runtime::AnyObject;
 use objc2::AllocAnyThread;
 use objc2_av_foundation::{
     AVAssetWriter, AVAssetWriterInput, AVAssetWriterInputPixelBufferAdaptor, AVAssetWriterStatus,
-    AVFileTypeQuickTimeMovie, AVMediaTypeAudio, AVMediaTypeVideo, AVVideoAverageBitRateKey,
-    AVVideoCodecKey, AVVideoCodecTypeH264, AVVideoColorPrimariesKey,
+    AVFileTypeMPEG4, AVFileTypeQuickTimeMovie, AVMediaTypeAudio, AVMediaTypeVideo,
+    AVVideoAverageBitRateKey, AVVideoCodecKey, AVVideoCodecTypeH264, AVVideoColorPrimariesKey,
     AVVideoColorPrimaries_ITU_R_709_2, AVVideoColorPropertiesKey, AVVideoCompressionPropertiesKey,
     AVVideoExpectedSourceFrameRateKey, AVVideoHeightKey, AVVideoMaxKeyFrameIntervalKey,
     AVVideoProfileLevelH264HighAutoLevel, AVVideoProfileLevelKey, AVVideoTransferFunctionKey,
@@ -207,6 +207,7 @@ pub struct MacEncoder {
         Retained<AVAssetWriterInput>,
         CFRetained<CMFormatDescription>,
     )>,
+    live: bool,
     finished: bool,
 }
 
@@ -220,13 +221,23 @@ impl MacEncoder {
         let url = NSURL::fileURLWithPath(&path);
         // SAFETY: valid file URL and file type constant.
         let writer = unsafe {
-            let file_type = AVFileTypeQuickTimeMovie
-                .ok_or_else(|| AppError::Encoder("QuickTime output is unavailable".into()))?;
+            let file_type = if settings.live {
+                AVFileTypeQuickTimeMovie
+            } else {
+                AVFileTypeMPEG4
+            }
+            .ok_or_else(|| AppError::Encoder("the output format is unavailable".into()))?;
             AVAssetWriter::initWithURL_fileType_error(AVAssetWriter::alloc(), &url, file_type)
                 .map_err(|e| AppError::Encoder(describe_error(&e)))?
         };
-        // SAFETY: plain property.
-        unsafe { writer.setMovieFragmentInterval(CMTime::new(FRAGMENT_SECONDS, 1)) };
+        // SAFETY: plain properties.
+        unsafe {
+            if settings.live {
+                writer.setMovieFragmentInterval(CMTime::new(FRAGMENT_SECONDS, 1));
+            } else {
+                writer.setShouldOptimizeForNetworkUse(true);
+            }
+        }
 
         // SAFETY: valid media type constants and settings dictionaries.
         let (video_input, adaptor) = unsafe {
@@ -237,7 +248,7 @@ impl MacEncoder {
                 media,
                 Some(&*video_settings(settings)?),
             );
-            input.setExpectsMediaDataInRealTime(true);
+            input.setExpectsMediaDataInRealTime(settings.live);
             let adaptor = AVAssetWriterInputPixelBufferAdaptor::assetWriterInputPixelBufferAdaptorWithAssetWriterInput_sourcePixelBufferAttributes(
                 &input,
                 Some(&pixel_buffer_attributes(settings)),
@@ -262,7 +273,7 @@ impl MacEncoder {
                     media,
                     Some(&*audio_settings()?),
                 );
-                input.setExpectsMediaDataInRealTime(true);
+                input.setExpectsMediaDataInRealTime(settings.live);
                 if !writer.canAddInput(&input) {
                     return Err(AppError::Encoder("cannot add an AAC audio track".into()));
                 }
@@ -286,8 +297,36 @@ impl MacEncoder {
             video_input,
             adaptor,
             audio,
+            live: settings.live,
             finished: false,
         })
+    }
+
+    /// Waits until `ready()`: up to `live_timeout` for live recordings
+    /// (returning `false` on timeout), or until the encoder catches up for
+    /// exports (failing only if it stalls completely).
+    fn wait_until_ready(
+        &self,
+        ready: impl Fn() -> bool,
+        live_timeout: Duration,
+    ) -> AppResult<bool> {
+        let timeout = if self.live {
+            live_timeout
+        } else {
+            Duration::from_secs(20)
+        };
+        let deadline = Instant::now() + timeout;
+        while !ready() {
+            self.check_status()?;
+            if Instant::now() >= deadline {
+                if self.live {
+                    return Ok(false);
+                }
+                return Err(AppError::Encoder("the encoder stopped responding".into()));
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        Ok(true)
     }
 
     fn check_status(&self) -> AppResult<()> {
@@ -337,8 +376,13 @@ impl VideoEncoder for MacEncoder {
         fill: &mut dyn FnMut(&mut BgraMut<'_>),
     ) -> AppResult<bool> {
         self.check_status()?;
+        // Live recordings drop a frame rather than stall capture; exports wait.
+        let input = self.video_input.clone();
         // SAFETY: plain property read.
-        if !unsafe { self.video_input.isReadyForMoreMediaData() } {
+        if !self.wait_until_ready(
+            || unsafe { input.isReadyForMoreMediaData() },
+            Duration::ZERO,
+        )? {
             return Ok(false);
         }
         let buffer = self.new_pixel_buffer()?;
@@ -357,7 +401,7 @@ impl VideoEncoder for MacEncoder {
     }
 
     fn append_audio(&mut self, media_time: f64, samples: &[f32]) -> AppResult<()> {
-        let Some((input, format)) = &self.audio else {
+        let Some((input, _)) = &self.audio else {
             return Ok(());
         };
         if samples.is_empty() {
@@ -365,16 +409,20 @@ impl VideoEncoder for MacEncoder {
         }
         self.check_status()?;
 
-        // Audio should never be dropped; wait briefly if the encoder is busy.
-        let deadline = Instant::now() + Duration::from_millis(250);
+        // Audio should never be dropped; wait if the encoder is busy.
+        let ready_input = input.clone();
         // SAFETY: plain property read.
-        while !unsafe { input.isReadyForMoreMediaData() } {
-            if Instant::now() > deadline {
-                log::warn!("audio encoder busy; dropping {} samples", samples.len());
-                return Ok(());
-            }
-            thread::sleep(Duration::from_millis(2));
+        let ready = self.wait_until_ready(
+            || unsafe { ready_input.isReadyForMoreMediaData() },
+            Duration::from_millis(250),
+        )?;
+        if !ready {
+            log::warn!("audio encoder busy; dropping {} samples", samples.len());
+            return Ok(());
         }
+        let Some((input, format)) = &self.audio else {
+            return Ok(());
+        };
 
         let sample_buffer = pcm_sample_buffer(format, media_time, samples)?;
         // SAFETY: the sample buffer is complete and ready.
