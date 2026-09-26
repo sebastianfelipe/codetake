@@ -67,7 +67,12 @@ fn main() {
     println!("permissions: {:?}", Current::permissions());
     if flag("--info") {
         println!("displays: {:?}", Current::displays());
-        println!("windows: {:?}", Current::windows().map(|w| w.len()));
+        for window in Current::windows().unwrap_or_default() {
+            println!(
+                "window {}: {} ({}x{})",
+                window.id, window.app_name, window.width, window.height
+            );
+        }
         println!("cameras: {:?}", Current::cameras());
         println!("microphones: {:?}", Current::microphones());
         return;
@@ -85,7 +90,12 @@ fn main() {
         .unwrap_or_else(|| std::env::temp_dir().join("codetake-example"));
 
     let config = RecordingConfig {
-        source: CaptureSource::Display { id: display.id },
+        source: match value("--window") {
+            Some(id) => CaptureSource::Window {
+                id: id.parse().expect("--window takes a window id (see --info)"),
+            },
+            None => CaptureSource::Display { id: display.id },
+        },
         camera: flag("--camera").then(|| CameraConfig {
             device_id: value("--camera-id")
                 .or_else(|| cameras.iter().find(|c| c.is_default).map(|c| c.id.clone()))
@@ -127,7 +137,16 @@ fn main() {
         Arc::new(PrintEvents),
     )
     .expect("start recording");
-    std::thread::sleep(Duration::from_secs_f64(seconds));
+    if flag("--pause") {
+        // Record, pause for as long again, then record the rest.
+        std::thread::sleep(Duration::from_secs_f64(seconds / 2.0));
+        handle.pause().expect("pause");
+        std::thread::sleep(Duration::from_secs_f64(seconds / 2.0));
+        handle.resume().expect("resume");
+        std::thread::sleep(Duration::from_secs_f64(seconds / 2.0));
+    } else {
+        std::thread::sleep(Duration::from_secs_f64(seconds));
+    }
     let outcome = handle.stop().expect("stop");
     println!("{outcome:?}");
 }
