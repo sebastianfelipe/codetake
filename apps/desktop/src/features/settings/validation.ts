@@ -53,7 +53,10 @@ function usable(status: PermissionState[PermissionKind]): boolean {
  * Fills in sensible defaults for anything not chosen yet (or no longer
  * available): the primary display, the system default camera/microphone.
  */
-export function resolvePreset(preset: Preset, ctx: SetupContext): Preset {
+export function resolvePreset(
+  preset: Preset,
+  ctx: Pick<SetupContext, "displays" | "windows" | "cameras" | "microphones" | "tracks">,
+): Preset {
   const sourceExists =
     preset.source?.kind === "display"
       ? ctx.displays.some((d) => d.id === preset.source?.id)
