@@ -58,24 +58,24 @@ use crate::video::compositor::BgraMut;
 const FRAGMENT_SECONDS: i64 = 2;
 const AUDIO_BITRATE: i64 = 192_000;
 
-type Dict = NSDictionary<NSString, AnyObject>;
+pub(super) type Dict = NSDictionary<NSString, AnyObject>;
 
-fn object<T: objc2::Message>(value: Retained<T>) -> Retained<AnyObject> {
+pub(super) fn object<T: objc2::Message>(value: Retained<T>) -> Retained<AnyObject> {
     // SAFETY: every Objective-C object is an AnyObject.
     unsafe { Retained::cast_unchecked(value) }
 }
 
-fn int(value: i64) -> Retained<AnyObject> {
+pub(super) fn int(value: i64) -> Retained<AnyObject> {
     object(NSNumber::new_i64(value))
 }
 
-fn dict(entries: Vec<(&NSString, Retained<AnyObject>)>) -> Retained<Dict> {
+pub(super) fn dict(entries: Vec<(&NSString, Retained<AnyObject>)>) -> Retained<Dict> {
     let keys: Vec<&NSString> = entries.iter().map(|(k, _)| *k).collect();
     let values: Vec<Retained<AnyObject>> = entries.into_iter().map(|(_, v)| v).collect();
     NSDictionary::from_retained_objects(&keys, &values)
 }
 
-fn key(value: Option<&'static NSString>) -> AppResult<&'static NSString> {
+pub(super) fn key(value: Option<&'static NSString>) -> AppResult<&'static NSString> {
     value.ok_or_else(|| AppError::Encoder("AVFoundation constant unavailable".into()))
 }
 
@@ -123,7 +123,7 @@ fn video_settings(settings: &EncoderSettings) -> AppResult<Retained<Dict>> {
     }
 }
 
-fn audio_settings() -> AppResult<Retained<Dict>> {
+pub(super) fn audio_settings() -> AppResult<Retained<Dict>> {
     // SAFETY: reading framework constant strings.
     unsafe {
         Ok(dict(vec![
@@ -163,7 +163,7 @@ fn pixel_buffer_attributes(settings: &EncoderSettings) -> Retained<Dict> {
 }
 
 /// Interleaved stereo float PCM at the mixer sample rate.
-fn pcm_format() -> AppResult<CFRetained<CMFormatDescription>> {
+pub(super) fn pcm_format() -> AppResult<CFRetained<CMFormatDescription>> {
     let bytes_per_frame = (CHANNELS * std::mem::size_of::<f32>()) as u32;
     let asbd = AudioStreamBasicDescription {
         mSampleRate: f64::from(SAMPLE_RATE),
@@ -420,7 +420,7 @@ impl VideoEncoder for MacEncoder {
 }
 
 /// Wraps interleaved PCM in a `CMSampleBuffer` for the AAC encoder.
-fn pcm_sample_buffer(
+pub(super) fn pcm_sample_buffer(
     format: &CMFormatDescription,
     media_time: f64,
     samples: &[f32],

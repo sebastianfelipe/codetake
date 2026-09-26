@@ -5,6 +5,7 @@ mod audio_file;
 mod capture_session;
 mod devices;
 mod encoder;
+mod export;
 mod frame;
 mod permissions;
 mod remux;
@@ -19,6 +20,7 @@ use crate::capabilities::{macos_capabilities, PlatformCapabilities};
 use crate::config::{CaptureSource, Size};
 use crate::devices::{CameraInfo, DisplayInfo, MicrophoneInfo, WindowInfo};
 use crate::error::AppResult;
+use crate::export::ExportJob;
 use crate::permissions::{PermissionKind, PermissionState, PermissionStatus};
 use crate::recording::capture::{
     CameraCapture, EncoderSettings, MicrophoneCapture, ScreenCapture, ScreenCaptureRequest,
@@ -91,6 +93,10 @@ impl Platform for MacPlatform {
 
     fn finalize_recording(intermediate: &Path, destination: &Path) -> AppResult<()> {
         remux::to_mp4(intermediate, destination)
+    }
+
+    fn export_recording(job: &ExportJob, progress: &mut dyn FnMut(f64)) -> AppResult<()> {
+        export::export(job, progress)
     }
 
     fn decode_audio_file(path: &Path) -> AppResult<Vec<f32>> {

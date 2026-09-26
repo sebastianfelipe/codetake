@@ -310,6 +310,9 @@ impl Platform for FakePlatform {
         fs::copy(intermediate, destination)?;
         Ok(())
     }
+    fn export_recording(_: &crate::export::ExportJob, _: &mut dyn FnMut(f64)) -> AppResult<()> {
+        Ok(())
+    }
     fn decode_audio_file(_: &Path) -> AppResult<Vec<f32>> {
         Ok(vec![0.1; 4800 * 2])
     }

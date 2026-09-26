@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod devices;
 pub mod error;
+pub mod export;
 pub mod music;
 pub mod output;
 pub mod permissions;

@@ -16,6 +16,7 @@ use crate::capabilities::PlatformCapabilities;
 use crate::config::{CaptureSource, Size};
 use crate::devices::{CameraInfo, DisplayInfo, MicrophoneInfo, WindowInfo};
 use crate::error::AppResult;
+use crate::export::ExportJob;
 use crate::permissions::{PermissionKind, PermissionState, PermissionStatus};
 use crate::recording::capture::{
     CameraCapture, EncoderSettings, MicrophoneCapture, ScreenCapture, ScreenCaptureRequest,
@@ -59,6 +60,10 @@ pub trait Platform {
     /// Turns a finished intermediate file into the final MP4 at
     /// `destination`, leaving `intermediate` in place.
     fn finalize_recording(intermediate: &Path, destination: &Path) -> AppResult<()>;
+
+    /// Writes `job.destination`: the recording with music mixed in (video
+    /// copied as is). Reports progress from 0 to 1.
+    fn export_recording(job: &ExportJob, progress: &mut dyn FnMut(f64)) -> AppResult<()>;
 
     /// Decodes an audio file to 48 kHz interleaved stereo.
     fn decode_audio_file(path: &Path) -> AppResult<Vec<f32>>;
