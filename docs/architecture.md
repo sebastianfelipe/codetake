@@ -10,6 +10,7 @@ apps/desktop/
 │   ├── features/recording/  recording flow state machine and controls
 │   ├── features/settings/   presets, validation, settings panel
 │   ├── features/preview/    overlay geometry (mirrors the compositor)
+│   ├── features/review/     review screen: playback, music, export
 │   ├── features/tray/       menu bar state
 │   ├── hooks/               backend data, preview, recording, settings
 │   ├── lib/                 typed Tauri bindings, formatting, paths
@@ -20,6 +21,7 @@ apps/desktop/
     ├── config.rs            RecordingConfig: parsing, validation, sizes
     ├── output.rs            output folders, file names, crash recovery
     ├── music.rs             bundled music catalog
+    ├── export.rs            music bed, fades and mixing for exports
     ├── recording/
     │   ├── capture.rs       capture/encoder traits
     │   ├── recorder.rs      the recording pipeline
@@ -72,6 +74,17 @@ SystemAudioCapture ┼─▶ AudioMixer ◀─ music                            
 The pipeline is tested end to end against a fake platform
 (`recording/tests.rs`): real threads and timing, synthetic captures, and a
 recording encoder.
+
+## Export with music
+
+Music is added after recording, in the review step. `export.rs` holds the
+platform-independent parts (looping music bed, fade envelope, mixing with
+separate music and voice volumes, soft limiting, file names);
+`Platform::export_recording` reads the recording and writes the new file.
+On macOS that is `AVAssetReader` + `AVAssetWriter`: video samples are passed
+through untouched, audio is decoded to 48 kHz float, mixed and re-encoded
+to AAC, and the two tracks are interleaved by timestamp. The review UI's
+preview mirrors the same envelope and balance (`features/review/mix.ts`).
 
 ## Recording session model
 

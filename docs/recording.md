@@ -15,12 +15,32 @@
 - A keyframe every two seconds, and the index at the start of the file
   ("fast start"), so players and upload sites can seek immediately.
 
+## Adding music after recording
+
+Recordings are always saved raw: screen, webcam, microphone and system
+audio, without music. After stopping, the review screen plays the
+recording and lets you pick a track and set two volumes — **music** and
+**voice** (the recorded audio, which can be boosted up to 200%) — while
+listening. The preview uses the same fades and balance as the export.
+
+**Export with music** writes `…-with-music.mp4` next to the original:
+
+- the H.264 video is copied sample for sample (no re-encoding, no quality
+  loss; an 8-second 2704×1756 recording exports in under 0.1 s);
+- the recorded audio is decoded, the music is looped under it with a
+  1.5-second fade-in and a 3-second fade-out at the end of the video, the
+  two are mixed with the chosen volumes and soft-limited so peaks never
+  clip, and the result is encoded to AAC again;
+- the file is written under a hidden temporary name and only appears when
+  complete, so a failed export never leaves a broken file.
+
 ## Files
 
 ```
 ~/Movies/CodeTake/
 └── 2026-09-26/
-    ├── coding-session-2026-09-26-09-32-14.mp4            finished recording
+    ├── coding-session-2026-09-26-09-32-14.mp4            finished recording (raw)
+    ├── coding-session-2026-09-26-09-32-14-with-music.mp4 exported copy with music
     ├── coding-session-2026-09-26-11-04-32.partial.mov    being recorded
     ├── coding-session-2026-09-25-18-00-01-recovered.mp4  recovered after a crash
     └── coding-session-2026-09-25-19-12-44-incomplete.mov could not be finalized

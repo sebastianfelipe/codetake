@@ -48,6 +48,9 @@ cargo run --release --example record -- --seconds 5 --camera --microphone \
   --music ../../../assets/music/coding-01.m4a --out /tmp/rec
 
 swift ../../../scripts/inspect-recording.swift /tmp/rec/*/coding-session-*.mp4 frame.png
+
+# export a recording with music (music volume 0.3, voice volume 1.0)
+cargo run --release --example export -- /tmp/rec/<day>/<file>.mp4 ../../../assets/music/coding-01.m4a 0.3 1.0
 ```
 
 The example drives the real backend and prints status updates;

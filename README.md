@@ -27,9 +27,12 @@ press Stop, done. It is not a video editor.
   preview, resize it, and choose a circle, square or wide rectangle.
 - **Microphone** recording with a live level meter.
 - **System audio** (sound from other apps), mixed into the same track.
-- **Background music** from a few bundled, public-domain (CC0) loops, with
-  a volume control.
-- **Live preview** of the final composition before you record.
+- **Review and background music**: after you stop, play the recording back,
+  add one of the bundled public-domain (CC0) loops, and balance the music
+  against your voice while listening. Export writes a copy with music (the
+  video is copied untouched, so it is fast and lossless); the raw recording
+  is always kept.
+- **Live preview** of the composition (screen and webcam) before you record.
 - **Countdown** (3, 2, 1; can be turned off), **pause/resume**, and a
   recording timer.
 - **Menu bar controls**: see what will be recorded, start, pause and stop
