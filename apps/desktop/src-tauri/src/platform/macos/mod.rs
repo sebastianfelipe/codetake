@@ -1,6 +1,7 @@
 //! macOS backend: ScreenCaptureKit for screen and system audio, AVFoundation
 //! for camera, microphone and encoding, AudioToolbox for music decoding.
 
+mod capture_session;
 mod devices;
 mod frame;
 mod permissions;
@@ -70,12 +71,14 @@ impl Platform for MacPlatform {
         Ok(Box::new(screen::MacScreenCapture::new(request)))
     }
 
-    fn camera_capture(_device_id: &str) -> AppResult<Box<dyn CameraCapture>> {
-        not_yet("camera capture")
+    fn camera_capture(device_id: &str) -> AppResult<Box<dyn CameraCapture>> {
+        Ok(Box::new(capture_session::MacCameraCapture::new(device_id)))
     }
 
-    fn microphone_capture(_device_id: &str) -> AppResult<Box<dyn MicrophoneCapture>> {
-        not_yet("microphone capture")
+    fn microphone_capture(device_id: &str) -> AppResult<Box<dyn MicrophoneCapture>> {
+        Ok(Box::new(capture_session::MacMicrophoneCapture::new(
+            device_id,
+        )))
     }
 
     fn system_audio_capture() -> AppResult<Box<dyn SystemAudioCapture>> {
