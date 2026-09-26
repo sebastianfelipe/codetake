@@ -4,7 +4,7 @@
 
 import type { Channel } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import { mockIPC } from "@tauri-apps/api/mocks";
+import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
 import type {
   PermissionState,
   PlatformCapabilities,
@@ -117,6 +117,7 @@ function sampleCamera(width: number, height: number): ImageData {
 }
 
 export function installMockBackend(): void {
+  mockConvertFileSrc("macos");
   mockIPC(
     (cmd, args) => {
       const payload = (args ?? {}) as Record<string, unknown>;
@@ -188,6 +189,26 @@ export function installMockBackend(): void {
             channel?.onmessage(encodeFrame(1, sampleCamera(320, 240)));
           }, 50);
           return null;
+        }
+        case "allow_media":
+          return null;
+        case "music_track_file":
+          return `/mock/music/${String(payload.trackId)}.m4a`;
+        case "export_recording": {
+          const progress = payload.progress as Channel<number> | undefined;
+          return new Promise((resolve) => {
+            let fraction = 0;
+            const timer = window.setInterval(() => {
+              fraction = Math.min(1, fraction + 0.25);
+              progress?.onmessage(fraction);
+              if (fraction >= 1) {
+                window.clearInterval(timer);
+                resolve(
+                  "/Users/dev/Movies/CodeTake/2026-09-26/coding-session-2026-09-26-09-32-14-with-music.mp4",
+                );
+              }
+            }, 150);
+          });
         }
         case "stop_preview":
         case "update_tray":

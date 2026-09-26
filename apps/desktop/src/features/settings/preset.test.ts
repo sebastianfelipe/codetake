@@ -14,7 +14,7 @@ const custom: Preset = {
   },
   microphone: { enabled: false, deviceId: "mic-1" },
   systemAudio: true,
-  music: { trackId: "coding-02", volume: 0.6 },
+  music: { trackId: "coding-02", volume: 0.6, recordingVolume: 1.4 },
   resolution: "1440p",
   fps: 60,
   countdown: false,
@@ -51,7 +51,7 @@ describe("preset serialization", () => {
     expect(preset.camera.size).toBe(0.6);
     expect(preset.camera.x).toBe(defaultPreset.camera.x);
     expect(preset.camera.y).toBe(0);
-    expect(preset.music).toEqual({ trackId: null, volume: 1 });
+    expect(preset.music).toEqual({ trackId: null, volume: 1, recordingVolume: 1 });
     expect(preset.systemAudio).toBe(true);
   });
 

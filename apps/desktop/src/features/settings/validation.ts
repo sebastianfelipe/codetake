@@ -34,7 +34,6 @@ export type IssueField =
   | "camera"
   | "microphone"
   | "systemAudio"
-  | "music"
   | "resolution"
   | "output";
 
@@ -171,10 +170,6 @@ export function validateSetup(preset: Preset, ctx: SetupContext): Issue[] {
     });
   }
 
-  if (preset.music.trackId && !ctx.tracks.some((t) => t.id === preset.music.trackId)) {
-    issues.push({ field: "music", message: "The selected music track is missing." });
-  }
-
   if (!ctx.availableResolutions.includes(preset.resolution)) {
     issues.push({
       field: "resolution",
@@ -195,7 +190,7 @@ export function buildRecordingConfig(preset: Preset, ctx: SetupContext): Recordi
   if (validateSetup(preset, ctx).length > 0 || !preset.source || !outputDirectory) {
     return null;
   }
-  const { camera, microphone, music } = preset;
+  const { camera, microphone } = preset;
   return {
     source: preset.source,
     camera:
@@ -208,7 +203,8 @@ export function buildRecordingConfig(preset: Preset, ctx: SetupContext): Recordi
     microphone:
       microphone.enabled && microphone.deviceId ? { deviceId: microphone.deviceId } : null,
     systemAudio: preset.systemAudio,
-    music: music.trackId ? { trackId: music.trackId, volume: music.volume } : null,
+    // Music is added after recording, in the review step.
+    music: null,
     resolution: preset.resolution,
     fps: preset.fps,
     outputDirectory,

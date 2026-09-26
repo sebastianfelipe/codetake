@@ -33,7 +33,7 @@ const preset: Preset = {
   source: { kind: "display", id: 1 },
   camera: { ...defaultPreset.camera, deviceId: "cam", shape: "square" },
   microphone: { enabled: true, deviceId: "mic" },
-  music: { trackId: "coding-01", volume: 0.3 },
+  music: { trackId: "coding-01", volume: 0.3, recordingVolume: 1 },
 };
 
 describe("tray state", () => {
@@ -63,7 +63,6 @@ describe("tray state", () => {
       "Camera: FaceTime HD Camera · Square",
       "Microphone: MacBook Pro Microphone",
       "System audio: Off",
-      "Music: Late Night Commit (30%)",
       "Video: Source (native) · 30 FPS",
     ]);
   });
@@ -75,7 +74,7 @@ describe("tray state", () => {
         source: { kind: "window", id: 9 },
         camera: { ...preset.camera, enabled: false },
         microphone: { enabled: false, deviceId: null },
-        music: { trackId: null, volume: 0.3 },
+        music: { trackId: null, volume: 0.3, recordingVolume: 1 },
       },
       ctx,
     );
@@ -84,7 +83,6 @@ describe("tray state", () => {
       "Camera: Off",
       "Microphone: Off",
     ]);
-    expect(details[4]).toBe("Music: None");
   });
 
   it("only allows recording when the setup is valid, explaining why not", () => {

@@ -605,3 +605,76 @@ h2 {
     order: -1;
   }
 }
+
+/* Review (after recording) */
+
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.review-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.review-video {
+  position: relative;
+  width: 100%;
+  min-height: 200px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #000;
+}
+
+.review-video video {
+  display: block;
+  width: 100%;
+  max-height: 46vh;
+  background: #000;
+}
+
+.review-controls {
+  margin: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.review-controls .row.labeled > .muted {
+  min-width: 52px;
+}
+
+.value {
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent-gradient);
+  transform-origin: left;
+  transition: transform 0.2s linear;
+}
+
+.path.inline {
+  display: inline;
+}

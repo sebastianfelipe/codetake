@@ -6,6 +6,7 @@ import { PermissionPanel } from "./components/PermissionPanel";
 import { PreviewCanvas } from "./components/PreviewCanvas";
 import { canRecord, isBusy } from "./features/recording/machine";
 import { RecordingPanel } from "./features/recording/RecordingPanel";
+import { ReviewPanel } from "./features/review/ReviewPanel";
 import { availableResolutions } from "./features/settings/resolution";
 import { SettingsPanel } from "./features/settings/SettingsPanel";
 import {
@@ -75,10 +76,12 @@ export function App() {
   const { view } = recording;
   const busy = isBusy(view);
   const visible = useVisible();
+  const reviewing = view.phase === "finished" && view.outcome.path !== null;
   const previewEnabled =
     visible &&
     settings.loaded &&
     !!data &&
+    !reviewing &&
     (view.phase === "idle" || view.phase === "countdown" || view.phase === "finished");
 
   const permissionsOk = (kind: PermissionKind) => {
@@ -246,69 +249,86 @@ export function App() {
         />
 
         <div className="stage">
-          <PreviewCanvas
-            screen={preview.screen}
-            camera={preview.camera}
-            overlay={cameraOverlay}
-            aspect={selectedSize ? selectedSize.width / selectedSize.height : 16 / 9}
-            onOverlayChange={
-              busy
-                ? undefined
-                : ({ shape, size, x, y }) =>
-                    settings.update((p) => ({ ...p, camera: { ...p.camera, shape, size, x, y } }))
-            }
-            placeholder={
-              preview.errors.screen?.message ??
-              (permissionsOk("screenRecording")
-                ? "Preview loading…"
-                : "Grant Screen Recording permission to see a preview")
-            }
-          />
+          {reviewing && view.phase === "finished" && view.outcome.path ? (
+            <ReviewPanel
+              outcome={{ ...view.outcome, path: view.outcome.path }}
+              tracks={data.tracks}
+              music={preset.music}
+              onMusicChange={(music) => settings.update((p) => ({ ...p, music }))}
+              revealLabel={revealLabel(data.capabilities.os)}
+              onDone={recording.dismiss}
+              onRecordAgain={recording.record}
+            />
+          ) : (
+            <>
+              <PreviewCanvas
+                screen={preview.screen}
+                camera={preview.camera}
+                overlay={cameraOverlay}
+                aspect={selectedSize ? selectedSize.width / selectedSize.height : 16 / 9}
+                onOverlayChange={
+                  busy
+                    ? undefined
+                    : ({ shape, size, x, y }) =>
+                        settings.update((p) => ({
+                          ...p,
+                          camera: { ...p.camera, shape, size, x, y },
+                        }))
+                }
+                placeholder={
+                  preview.errors.screen?.message ??
+                  (permissionsOk("screenRecording")
+                    ? "Preview loading…"
+                    : "Grant Screen Recording permission to see a preview")
+                }
+              />
 
-          {view.phase === "countdown" && (
-            <div className="countdown" role="timer" aria-live="assertive">
-              <span key={view.remaining}>{view.remaining}</span>
-              <button type="button" className="link" onClick={recording.cancelCountdown}>
-                Cancel
-              </button>
-            </div>
+              {view.phase === "countdown" && (
+                <div className="countdown" role="timer" aria-live="assertive">
+                  <span key={view.remaining}>{view.remaining}</span>
+                  <button type="button" className="link" onClick={recording.cancelCountdown}>
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {(view.phase === "idle" || view.phase === "countdown") && (
+                <div className="record-area">
+                  <button
+                    type="button"
+                    className="record-button"
+                    disabled={issues.length > 0 || view.phase === "countdown"}
+                    onClick={recording.record}
+                  >
+                    <span className="dot" aria-hidden="true" /> Record
+                  </button>
+                  {view.phase === "idle" && view.error && (
+                    <p className="hint error">{view.error.message}</p>
+                  )}
+                  {blocking.length > 0 && issues.length > 0 && (
+                    <p className="hint">Fix the highlighted settings to start recording.</p>
+                  )}
+                  {nextPath && (
+                    <p className="muted small path" title={nextPath}>
+                      Saves to {displayPath(nextPath, home)}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <RecordingPanel
+                view={view}
+                status={recording.status}
+                microphone={preset.microphone.enabled}
+                revealLabel={revealLabel(data.capabilities.os)}
+                onPause={recording.pause}
+                onResume={recording.resume}
+                onStop={recording.stop}
+                onDismiss={recording.dismiss}
+                onRecordAgain={recording.record}
+              />
+            </>
           )}
-
-          {(view.phase === "idle" || view.phase === "countdown") && (
-            <div className="record-area">
-              <button
-                type="button"
-                className="record-button"
-                disabled={issues.length > 0 || view.phase === "countdown"}
-                onClick={recording.record}
-              >
-                <span className="dot" aria-hidden="true" /> Record
-              </button>
-              {view.phase === "idle" && view.error && (
-                <p className="hint error">{view.error.message}</p>
-              )}
-              {blocking.length > 0 && issues.length > 0 && (
-                <p className="hint">Fix the highlighted settings to start recording.</p>
-              )}
-              {nextPath && (
-                <p className="muted small path" title={nextPath}>
-                  Saves to {displayPath(nextPath, home)}
-                </p>
-              )}
-            </div>
-          )}
-
-          <RecordingPanel
-            view={view}
-            status={recording.status}
-            microphone={preset.microphone.enabled}
-            revealLabel={revealLabel(data.capabilities.os)}
-            onPause={recording.pause}
-            onResume={recording.resume}
-            onStop={recording.stop}
-            onDismiss={recording.dismiss}
-            onRecordAgain={recording.record}
-          />
         </div>
       </div>
 

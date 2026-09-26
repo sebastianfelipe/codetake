@@ -48,6 +48,8 @@ export const api = {
   resumeRecording: () => invoke<void>("resume_recording"),
   stopRecording: () => invoke<RecordingOutcome>("stop_recording"),
   stopPreview: () => invoke<void>("stop_preview"),
+  allowMedia: (path: string) => invoke<void>("allow_media", { path }),
+  musicTrackFile: (trackId: string) => invoke<string>("music_track_file", { trackId }),
   updateTray: (state: TrayState) => invoke<void>("update_tray", { state }),
   setTrayTitle: (title: string | null) => invoke<void>("set_tray_title", { title }),
 };
@@ -94,6 +96,23 @@ export function startPreview(
     }
   };
   return invoke<void>("start_preview", { request, frames });
+}
+
+export interface ExportSettings {
+  source: string;
+  trackId: string;
+  musicVolume: number;
+  recordingVolume: number;
+}
+
+/** Exports the recording with music; resolves to the new file's path. */
+export function exportRecording(
+  settings: ExportSettings,
+  onProgress: (fraction: number) => void,
+): Promise<string> {
+  const progress = new Channel<number>();
+  progress.onmessage = onProgress;
+  return invoke<string>("export_recording", { settings, progress });
 }
 
 export const events = {

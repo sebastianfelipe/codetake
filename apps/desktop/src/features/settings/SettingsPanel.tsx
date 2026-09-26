@@ -240,34 +240,6 @@ export function SettingsPanel({
         {issueFor(issues, "systemAudio")}
       </Section>
 
-      <Section title="Music">
-        <Select
-          label="Background music"
-          value={preset.music.trackId ?? "none"}
-          options={[
-            { value: "none", label: "None" },
-            ...data.tracks.map((t) => ({ value: t.id, label: `${t.title} (${t.license})` })),
-          ]}
-          onChange={(value) =>
-            update((p) => ({
-              ...p,
-              music: { ...p.music, trackId: value === "none" ? null : value },
-            }))
-          }
-        />
-        {preset.music.trackId && (
-          <div className="row labeled">
-            <span className="muted">Volume</span>
-            <Slider
-              label="Music volume"
-              value={preset.music.volume}
-              onChange={(volume) => update((p) => ({ ...p, music: { ...p.music, volume } }))}
-            />
-          </div>
-        )}
-        {issueFor(issues, "music")}
-      </Section>
-
       <Section title="Video">
         <div className="row">
           <Select<Resolution>

@@ -64,7 +64,7 @@ describe("resolvePreset", () => {
         source: { kind: "display", id: 1 },
         camera: { ...defaultPreset.camera, deviceId: "cam-a" },
         microphone: { enabled: true, deviceId: "unplugged" },
-        music: { trackId: "deleted", volume: 0.3 },
+        music: { trackId: "deleted", volume: 0.3, recordingVolume: 1 },
       },
       ctx,
     );
@@ -153,7 +153,7 @@ describe("validateSetup", () => {
 describe("buildRecordingConfig", () => {
   it("builds the backend config from a valid preset", () => {
     const config = buildRecordingConfig(
-      { ...ready, music: { trackId: "coding-01", volume: 0.4 }, fps: 60 },
+      { ...ready, music: { trackId: "coding-01", volume: 0.4, recordingVolume: 1 }, fps: 60 },
       ctx,
     );
     expect(config).toEqual({
@@ -164,7 +164,7 @@ describe("buildRecordingConfig", () => {
       },
       microphone: { deviceId: "mic-a" },
       systemAudio: false,
-      music: { trackId: "coding-01", volume: 0.4 },
+      music: null,
       resolution: "source",
       fps: 60,
       outputDirectory: "/Users/dev/Movies/CodeTake",

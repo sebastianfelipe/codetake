@@ -24,7 +24,8 @@ export interface Preset {
   };
   microphone: { enabled: boolean; deviceId: string | null };
   systemAudio: boolean;
-  music: { trackId: string | null; volume: number };
+  /** Defaults for the review step, where music is added after recording. */
+  music: { trackId: string | null; volume: number; recordingVolume: number };
   resolution: Resolution;
   fps: Fps;
   countdown: boolean;
@@ -43,7 +44,7 @@ export const defaultPreset: Preset = {
   },
   microphone: { enabled: true, deviceId: null },
   systemAudio: false,
-  music: { trackId: null, volume: 0.25 },
+  music: { trackId: null, volume: 0.25, recordingVolume: 1 },
   resolution: "source",
   fps: 30,
   countdown: true,
@@ -152,6 +153,7 @@ export function deserializePreset(input: unknown): Preset {
     music: {
       trackId: optionalString(music.trackId),
       volume: clampNumber(music.volume, 0, 1, d.music.volume),
+      recordingVolume: clampNumber(music.recordingVolume, 0, 2, d.music.recordingVolume),
     },
     resolution: oneOf(data.resolution, RESOLUTIONS, d.resolution),
     fps: oneOf<Fps>(data.fps, [30, 60], d.fps),

@@ -74,13 +74,11 @@ export function trayDetails(
     ? `Microphone: ${microphoneName ?? "Not available"}`
     : "Microphone: Off";
 
-  const track = ctx.tracks.find((t) => t.id === preset.music.trackId);
   return [
     screen,
     camera,
     microphone,
     `System audio: ${preset.systemAudio ? "On" : "Off"}`,
-    `Music: ${track ? `${track.title} (${Math.round(preset.music.volume * 100)}%)` : "None"}`,
     `Video: ${RESOLUTION_LABELS[preset.resolution]} · ${preset.fps} FPS`,
   ];
 }
