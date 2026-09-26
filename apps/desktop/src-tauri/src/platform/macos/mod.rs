@@ -1,6 +1,7 @@
 //! macOS backend: ScreenCaptureKit for screen and system audio, AVFoundation
 //! for camera, microphone and encoding, AudioToolbox for music decoding.
 
+mod audio_file;
 mod capture_session;
 mod devices;
 mod encoder;
@@ -24,12 +25,6 @@ use crate::recording::capture::{
 };
 
 pub struct MacPlatform;
-
-fn not_yet<T>(feature: &str) -> AppResult<T> {
-    Err(crate::error::AppError::Unsupported(format!(
-        "{feature} is not implemented yet"
-    )))
-}
 
 impl Platform for MacPlatform {
     fn capabilities() -> PlatformCapabilities {
@@ -90,8 +85,8 @@ impl Platform for MacPlatform {
         Ok(Box::new(encoder::MacEncoder::new(settings)?))
     }
 
-    fn decode_audio_file(_path: &Path) -> AppResult<Vec<f32>> {
-        not_yet("music decoding")
+    fn decode_audio_file(path: &Path) -> AppResult<Vec<f32>> {
+        audio_file::decode(path)
     }
 
     fn host_time() -> f64 {
