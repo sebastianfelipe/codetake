@@ -16,5 +16,7 @@
     "format": "biome format --write .",
     "lint": "biome lint ."
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14"
+  }
 }
