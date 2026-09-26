@@ -44,7 +44,9 @@
     "license": "MIT",
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "entitlements": "./Entitlements.plist"
+      "entitlements": "./Entitlements.plist",
+      "signingIdentity": "-",
+      "hardenedRuntime": true
     },
     "linux": {
       "deb": {

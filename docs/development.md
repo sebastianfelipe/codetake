@@ -61,8 +61,11 @@ pnpm build
 ```
 
 produces `CodeTake.app` and a `.dmg` in
-`apps/desktop/src-tauri/target/release/bundle/`. Signing and notarization
-need an Apple Developer ID; see the
+`apps/desktop/src-tauri/target/release/bundle/`. By default the bundle is
+ad-hoc signed (`signingIdentity: "-"`) with the hardened runtime, which
+gives it a stable identity so macOS remembers its permissions on your
+machine. Distributing to other Macs without Gatekeeper warnings needs a
+Developer ID signature and notarization; see the
 [Tauri distribution guide](https://v2.tauri.app/distribute/sign/macos/). The
 entitlements needed for the hardened runtime (camera, microphone) are in
 `src-tauri/Entitlements.plist`.
