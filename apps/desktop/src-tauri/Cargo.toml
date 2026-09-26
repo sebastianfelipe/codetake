@@ -8,6 +8,11 @@ repository = "https://github.com/sebastianfelipe/codetake"
 edition = "2021"
 rust-version = "1.85"
 
+[[bin]]
+# The executable users see (Activity Monitor, the menu bar, `ps`).
+name = "CodeTake"
+path = "src/main.rs"
+
 [lib]
 name = "codetake_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
