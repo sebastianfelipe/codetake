@@ -72,16 +72,19 @@ export interface MusicTrack {
 
 export type CaptureSource = { kind: "display"; id: number } | { kind: "window"; id: number };
 
-export type OverlayPosition = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
-export type OverlayShape = "circle" | "roundedRectangle";
-export type OverlaySize = "small" | "medium" | "large";
+export type OverlayShape = "circle" | "square" | "rectangle";
 export type Resolution = "source" | "1080p" | "1440p" | "2160p";
 export type Fps = 30 | 60;
 
+/** Mirrors `config::CameraOverlay`: all values are fractions of the frame. */
 export interface CameraOverlay {
-  size: OverlaySize;
-  position: OverlayPosition;
   shape: OverlayShape;
+  /** Overlay height as a fraction of the video height. */
+  size: number;
+  /** Center of the overlay, 0..1 from the left edge. */
+  x: number;
+  /** Center of the overlay, 0..1 from the top edge. */
+  y: number;
 }
 
 /** Sent to `start_recording`; mirrors `config::RecordingConfig`. */

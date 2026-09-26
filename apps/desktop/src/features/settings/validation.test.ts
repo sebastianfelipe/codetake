@@ -160,7 +160,7 @@ describe("buildRecordingConfig", () => {
       source: { kind: "display", id: 2 },
       camera: {
         deviceId: "cam-b",
-        overlay: { size: "medium", position: "bottomRight", shape: "circle" },
+        overlay: { shape: "circle", size: 0.25, x: 0.91, y: 0.84 },
       },
       microphone: { deviceId: "mic-a" },
       systemAudio: false,

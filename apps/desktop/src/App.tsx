@@ -140,7 +140,12 @@ export function App() {
   const blocking = issues.filter((i) => !i.permission);
   const platformIssue = issues.find((i) => i.field === "platform");
   const cameraOverlay = preset.camera.enabled
-    ? { size: preset.camera.size, position: preset.camera.position, shape: preset.camera.shape }
+    ? {
+        shape: preset.camera.shape,
+        size: preset.camera.size,
+        x: preset.camera.x,
+        y: preset.camera.y,
+      }
     : null;
   const microphoneLevel = busy ? (recording.status?.microphoneLevel ?? 0) : preview.level;
   const nextPath = outputDirectory ? recordingPath(outputDirectory, new Date()) : null;
@@ -201,6 +206,12 @@ export function App() {
             camera={preview.camera}
             overlay={cameraOverlay}
             aspect={selectedSize ? selectedSize.width / selectedSize.height : 16 / 9}
+            onOverlayChange={
+              busy
+                ? undefined
+                : ({ shape, size, x, y }) =>
+                    settings.update((p) => ({ ...p, camera: { ...p.camera, shape, size, x, y } }))
+            }
             placeholder={
               preview.errors.screen?.message ??
               (permissionsOk("screenRecording")

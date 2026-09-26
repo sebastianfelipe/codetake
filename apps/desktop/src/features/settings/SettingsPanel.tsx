@@ -12,7 +12,8 @@ import {
 import type { BackendData } from "../../hooks/useBackend";
 import { formatRefreshRate, formatResolution } from "../../lib/format";
 import { displayPath } from "../../lib/outputPath";
-import type { OverlayPosition, Resolution } from "../../types/backend";
+import type { Resolution } from "../../types/backend";
+import { OVERLAY_MAX_SIZE, OVERLAY_MIN_SIZE, OVERLAY_PRESETS } from "../preview/overlay";
 import type { Preset } from "./preset";
 import { availableResolutions, RESOLUTION_LABELS } from "./resolution";
 import type { Issue, IssueField } from "./validation";
@@ -29,12 +30,21 @@ interface Props {
   onRefreshWindows: () => void;
 }
 
-const POSITIONS: { value: OverlayPosition; label: string; title: string }[] = [
+const PLACEMENTS: { value: keyof typeof OVERLAY_PRESETS; label: string; title: string }[] = [
   { value: "topLeft", label: "↖", title: "Top left" },
   { value: "topRight", label: "↗", title: "Top right" },
   { value: "bottomLeft", label: "↙", title: "Bottom left" },
   { value: "bottomRight", label: "↘", title: "Bottom right" },
 ];
+
+/** Which quick placement the overlay is currently at, if any. */
+function currentPlacement(x: number, y: number): keyof typeof OVERLAY_PRESETS | "" {
+  const match = PLACEMENTS.find(({ value }) => {
+    const preset = OVERLAY_PRESETS[value];
+    return Math.abs(preset.x - x) < 0.01 && Math.abs(preset.y - y) < 0.01;
+  });
+  return match?.value ?? "";
+}
 
 function sourceValue(preset: Preset): string | null {
   return preset.source ? `${preset.source.kind}:${preset.source.id}` : null;
@@ -145,33 +155,36 @@ export function SettingsPanel({
             />
             <div className="row">
               <Segmented
-                label="Camera size"
-                value={preset.camera.size}
-                options={[
-                  { value: "small", label: "S", title: "Small" },
-                  { value: "medium", label: "M", title: "Medium" },
-                  { value: "large", label: "L", title: "Large" },
-                ]}
-                onChange={(size) => update((p) => ({ ...p, camera: { ...p.camera, size } }))}
-              />
-              <Segmented
                 label="Camera shape"
                 value={preset.camera.shape}
                 options={[
-                  { value: "circle", label: "●", title: "Circle" },
-                  { value: "roundedRectangle", label: "▬", title: "Rounded rectangle" },
+                  { value: "circle", label: "Circle" },
+                  { value: "square", label: "Square" },
+                  { value: "rectangle", label: "Wide" },
                 ]}
                 onChange={(shape) => update((p) => ({ ...p, camera: { ...p.camera, shape } }))}
               />
               <Segmented
-                label="Camera position"
-                value={preset.camera.position}
-                options={POSITIONS}
-                onChange={(position) =>
-                  update((p) => ({ ...p, camera: { ...p.camera, position } }))
+                label="Camera placement"
+                value={currentPlacement(preset.camera.x, preset.camera.y)}
+                options={PLACEMENTS}
+                onChange={(placement) =>
+                  placement &&
+                  update((p) => ({ ...p, camera: { ...p.camera, ...OVERLAY_PRESETS[placement] } }))
                 }
               />
             </div>
+            <div className="row labeled">
+              <span className="muted">Size</span>
+              <Slider
+                label="Camera size"
+                value={preset.camera.size}
+                min={OVERLAY_MIN_SIZE}
+                max={OVERLAY_MAX_SIZE}
+                onChange={(size) => update((p) => ({ ...p, camera: { ...p.camera, size } }))}
+              />
+            </div>
+            <Hint>Drag the camera in the preview to place it anywhere.</Hint>
             {issueFor(issues, "camera")}
           </>
         )}

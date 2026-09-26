@@ -7,9 +7,10 @@ const custom: Preset = {
   camera: {
     enabled: true,
     deviceId: "cam-1",
-    size: "large",
-    position: "topLeft",
-    shape: "roundedRectangle",
+    shape: "rectangle",
+    size: 0.4,
+    x: 0.2,
+    y: 0.3,
   },
   microphone: { enabled: false, deviceId: "mic-1" },
   systemAudio: true,
@@ -41,16 +42,24 @@ describe("preset serialization", () => {
       ...custom,
       fps: 24,
       resolution: "8k",
-      camera: { ...custom.camera, position: "middle", size: 3 },
+      camera: { ...custom.camera, shape: "hexagon", size: 3, x: "left", y: -2 },
       music: { trackId: "", volume: 7 },
     });
     expect(preset.fps).toBe(30);
     expect(preset.resolution).toBe("source");
-    expect(preset.camera.position).toBe("bottomRight");
-    expect(preset.camera.size).toBe("medium");
-    expect(preset.camera.shape).toBe("roundedRectangle");
+    expect(preset.camera.shape).toBe("circle");
+    expect(preset.camera.size).toBe(0.6);
+    expect(preset.camera.x).toBe(defaultPreset.camera.x);
+    expect(preset.camera.y).toBe(0);
     expect(preset.music).toEqual({ trackId: null, volume: 1 });
     expect(preset.systemAudio).toBe(true);
+  });
+
+  it("migrates presets saved with fixed corners and sizes", () => {
+    const preset = deserializePreset({
+      camera: { enabled: true, size: "small", position: "topLeft", shape: "roundedRectangle" },
+    });
+    expect(preset.camera).toMatchObject({ shape: "rectangle", size: 0.18, x: 0.09, y: 0.16 });
   });
 
   it("does not restore window sources, whose IDs change between launches", () => {

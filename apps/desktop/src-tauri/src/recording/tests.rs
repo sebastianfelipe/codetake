@@ -517,9 +517,10 @@ fn composites_the_camera_over_the_screen() {
     config.camera = Some(CameraConfig {
         device_id: "cam".into(),
         overlay: CameraOverlay {
-            size: OverlaySize::Large,
-            position: OverlayPosition::BottomRight,
-            shape: OverlayShape::RoundedRectangle,
+            shape: OverlayShape::Rectangle,
+            size: 0.5,
+            x: 1.0,
+            y: 1.0,
         },
     });
     let handle = recorder::start::<FakePlatform>(

@@ -125,19 +125,24 @@ export function Slider({
   value,
   onChange,
   disabled,
+  min = 0,
+  max = 1,
 }: {
   label: string;
+  /** Between `min` and `max` (0..1 by default). */
   value: number;
   onChange: (value: number) => void;
   disabled?: boolean;
+  min?: number;
+  max?: number;
 }) {
   return (
     <input
       className="slider"
       type="range"
       aria-label={label}
-      min={0}
-      max={100}
+      min={Math.round(min * 100)}
+      max={Math.round(max * 100)}
       step={1}
       value={Math.round(value * 100)}
       disabled={disabled}

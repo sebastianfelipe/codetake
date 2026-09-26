@@ -380,6 +380,7 @@ h2 {
 }
 
 .preview canvas {
+  touch-action: none;
   display: block;
   width: 100%;
   height: auto;
@@ -388,6 +389,7 @@ h2 {
 }
 
 .preview-placeholder {
+  pointer-events: none;
   position: absolute;
   inset: 0;
   display: flex;

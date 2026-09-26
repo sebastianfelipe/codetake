@@ -5,7 +5,7 @@
 //! aspect ratio, scaled with bilinear filtering and blended through an
 //! anti-aliased shape mask (circle or rounded rectangle).
 
-use crate::config::{CameraOverlay, OverlayPosition, OverlayShape};
+use crate::config::{CameraOverlay, OverlayShape};
 
 /// A read-only view of a BGRA image.
 #[derive(Clone, Copy)]
@@ -32,33 +32,35 @@ pub struct Rect {
     pub height: usize,
 }
 
-/// Where the camera overlay goes in a frame of the given size.
+/// Where the camera overlay goes in a frame of the given size. The overlay
+/// is centered on (`x`, `y`) and pushed back inside the frame if needed.
 pub fn overlay_rect(frame_width: usize, frame_height: usize, overlay: &CameraOverlay) -> Rect {
-    let short_side = frame_width.min(frame_height) as f64;
-    let height = (frame_height as f64 * overlay.size.height_fraction()).round() as usize;
+    let height = (frame_height as f64 * overlay.size).round() as usize;
     let width = match overlay.shape {
-        OverlayShape::Circle => height,
-        OverlayShape::RoundedRectangle => (height as f64 * 4.0 / 3.0).round() as usize,
+        OverlayShape::Circle | OverlayShape::Square => height,
+        OverlayShape::Rectangle => (height as f64 * 4.0 / 3.0).round() as usize,
     };
-    let width = width.min(frame_width).max(2);
-    let height = height.min(frame_height).max(2);
-    let margin = (short_side * 0.03).round() as usize;
+    let width = width.clamp(2, frame_width.max(2));
+    let height = height.clamp(2, frame_height.max(2));
 
-    let left = margin;
-    let right = frame_width.saturating_sub(width + margin);
-    let top = margin;
-    let bottom = frame_height.saturating_sub(height + margin);
-    let (x, y) = match overlay.position {
-        OverlayPosition::TopLeft => (left, top),
-        OverlayPosition::TopRight => (right, top),
-        OverlayPosition::BottomLeft => (left, bottom),
-        OverlayPosition::BottomRight => (right, bottom),
+    let place = |center: f64, extent: usize, frame: usize| -> usize {
+        let start = (center * frame as f64 - extent as f64 / 2.0).round();
+        start.clamp(0.0, frame.saturating_sub(extent) as f64) as usize
     };
     Rect {
-        x,
-        y,
+        x: place(overlay.x, width, frame_width),
+        y: place(overlay.y, height, frame_height),
         width,
         height,
+    }
+}
+
+/// Corner radius of the overlay shape, in pixels.
+pub fn corner_radius(width: usize, height: usize, shape: OverlayShape) -> f64 {
+    let short = width.min(height) as f64;
+    match shape {
+        OverlayShape::Circle => short / 2.0,
+        OverlayShape::Square | OverlayShape::Rectangle => short * 0.12,
     }
 }
 
@@ -72,10 +74,7 @@ pub struct Mask {
 
 impl Mask {
     pub fn new(width: usize, height: usize, shape: OverlayShape) -> Self {
-        let radius = match shape {
-            OverlayShape::Circle => width.min(height) as f64 / 2.0,
-            OverlayShape::RoundedRectangle => width.min(height) as f64 * 0.16,
-        };
+        let radius = corner_radius(width, height, shape);
         let half_w = width as f64 / 2.0;
         let half_h = height as f64 / 2.0;
         let mut coverage = Vec::with_capacity(width * height);
@@ -247,65 +246,53 @@ pub fn thumbnail_rgba(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::OverlaySize;
 
     fn solid(width: usize, height: usize, bgra: [u8; 4]) -> Vec<u8> {
         bgra.repeat(width * height)
     }
 
-    fn overlay(position: OverlayPosition, shape: OverlayShape) -> CameraOverlay {
-        CameraOverlay {
-            size: OverlaySize::Medium,
-            position,
-            shape,
-        }
+    fn overlay(shape: OverlayShape, size: f64, x: f64, y: f64) -> CameraOverlay {
+        CameraOverlay { shape, size, x, y }
     }
 
     #[test]
-    fn circle_overlay_is_square_in_the_bottom_right_by_default() {
+    fn default_overlay_is_a_circle_in_the_bottom_right() {
         let rect = overlay_rect(1920, 1080, &CameraOverlay::default());
-        assert_eq!(rect.width, 270);
-        assert_eq!(rect.height, 270);
-        let margin = (1080.0_f64 * 0.03).round() as usize;
-        assert_eq!(rect.x + rect.width + margin, 1920);
-        assert_eq!(rect.y + rect.height + margin, 1080);
+        assert_eq!((rect.width, rect.height), (270, 270));
+        assert_eq!((rect.x, rect.y), (1612, 772));
     }
 
     #[test]
-    fn overlay_positions_map_to_corners() {
-        let top_left = overlay_rect(
-            1000,
-            500,
-            &overlay(OverlayPosition::TopLeft, OverlayShape::Circle),
+    fn overlay_is_centered_on_its_position() {
+        let rect = overlay_rect(1000, 500, &overlay(OverlayShape::Square, 0.2, 0.5, 0.5));
+        assert_eq!(
+            rect,
+            Rect {
+                x: 450,
+                y: 200,
+                width: 100,
+                height: 100
+            }
         );
-        assert_eq!((top_left.x, top_left.y), (15, 15));
-        let top_right = overlay_rect(
-            1000,
-            500,
-            &overlay(OverlayPosition::TopRight, OverlayShape::Circle),
-        );
-        assert_eq!(top_right.x + top_right.width, 985);
-        let bottom_left = overlay_rect(
-            1000,
-            500,
-            &overlay(OverlayPosition::BottomLeft, OverlayShape::Circle),
-        );
-        assert_eq!(bottom_left.y + bottom_left.height, 485);
     }
 
     #[test]
-    fn rounded_rectangle_overlay_is_landscape() {
-        let rect = overlay_rect(
-            1920,
-            1080,
-            &overlay(OverlayPosition::BottomRight, OverlayShape::RoundedRectangle),
-        );
+    fn overlay_is_kept_inside_the_frame() {
+        let rect = overlay_rect(1000, 500, &overlay(OverlayShape::Circle, 0.4, 0.0, 1.0));
+        assert_eq!((rect.x, rect.y), (0, 300));
+        let rect = overlay_rect(1000, 500, &overlay(OverlayShape::Circle, 0.4, 1.0, 0.0));
+        assert_eq!((rect.x + rect.width, rect.y), (1000, 0));
+    }
+
+    #[test]
+    fn rectangle_overlay_is_landscape() {
+        let rect = overlay_rect(1920, 1080, &overlay(OverlayShape::Rectangle, 0.3, 0.5, 0.5));
         assert!(rect.width > rect.height);
     }
 
     #[test]
     fn overlay_fits_inside_tiny_frames() {
-        let rect = overlay_rect(40, 20, &CameraOverlay::default());
+        let rect = overlay_rect(40, 20, &overlay(OverlayShape::Rectangle, 0.6, 0.9, 0.9));
         assert!(rect.x + rect.width <= 40 && rect.y + rect.height <= 20);
     }
 
@@ -322,7 +309,7 @@ mod tests {
 
     #[test]
     fn rounded_rectangle_mask_covers_edges_but_not_corners() {
-        let mask = Mask::new(120, 90, OverlayShape::RoundedRectangle);
+        let mask = Mask::new(120, 90, OverlayShape::Rectangle);
         assert_eq!(mask.at(60, 1), 255);
         assert_eq!(mask.at(1, 45), 255);
         assert_eq!(mask.at(0, 0), 0);

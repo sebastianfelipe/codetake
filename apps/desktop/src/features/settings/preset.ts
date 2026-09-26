@@ -4,14 +4,8 @@
 // field is validated individually, so a corrupted or older settings file
 // falls back to defaults field by field instead of breaking the app.
 
-import type {
-  CaptureSource,
-  Fps,
-  OverlayPosition,
-  OverlayShape,
-  OverlaySize,
-  Resolution,
-} from "../../types/backend";
+import type { CaptureSource, Fps, OverlayShape, Resolution } from "../../types/backend";
+import { OVERLAY_MAX_SIZE, OVERLAY_MIN_SIZE, OVERLAY_PRESETS } from "../preview/overlay";
 
 export const PRESET_VERSION = 1;
 
@@ -21,9 +15,12 @@ export interface Preset {
   camera: {
     enabled: boolean;
     deviceId: string | null;
-    size: OverlaySize;
-    position: OverlayPosition;
     shape: OverlayShape;
+    /** Height as a fraction of the video height. */
+    size: number;
+    /** Center of the overlay as fractions of the frame. */
+    x: number;
+    y: number;
   };
   microphone: { enabled: boolean; deviceId: string | null };
   systemAudio: boolean;
@@ -40,9 +37,9 @@ export const defaultPreset: Preset = {
   camera: {
     enabled: true,
     deviceId: null,
-    size: "medium",
-    position: "bottomRight",
     shape: "circle",
+    size: 0.25,
+    ...OVERLAY_PRESETS.bottomRight,
   },
   microphone: { enabled: true, deviceId: null },
   systemAudio: false,
@@ -54,9 +51,11 @@ export const defaultPreset: Preset = {
 };
 
 const RESOLUTIONS: readonly Resolution[] = ["source", "1080p", "1440p", "2160p"];
-const POSITIONS: readonly OverlayPosition[] = ["topLeft", "topRight", "bottomLeft", "bottomRight"];
-const SHAPES: readonly OverlayShape[] = ["circle", "roundedRectangle"];
-const SIZES: readonly OverlaySize[] = ["small", "medium", "large"];
+const SHAPES: readonly OverlayShape[] = ["circle", "square", "rectangle"];
+
+// Presets saved before the overlay could be moved and resized freely.
+const LEGACY_SIZES: Record<string, number> = { small: 0.18, medium: 0.25, large: 0.34 };
+const LEGACY_SHAPES: Record<string, OverlayShape> = { roundedRectangle: "rectangle" };
 
 type Json = Record<string, unknown>;
 
@@ -86,11 +85,33 @@ function parseSource(value: unknown): CaptureSource | null {
   return null;
 }
 
-function clampVolume(value: unknown, fallback: number): number {
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return fallback;
   }
-  return Math.min(1, Math.max(0, value));
+  return Math.min(max, Math.max(min, value));
+}
+
+function parseCamera(camera: Json): Preset["camera"] {
+  const d = defaultPreset.camera;
+  const legacyPosition =
+    typeof camera.position === "string" && camera.position in OVERLAY_PRESETS
+      ? OVERLAY_PRESETS[camera.position as keyof typeof OVERLAY_PRESETS]
+      : null;
+  const size =
+    typeof camera.size === "string" ? (LEGACY_SIZES[camera.size] ?? d.size) : camera.size;
+  const shape =
+    typeof camera.shape === "string" && camera.shape in LEGACY_SHAPES
+      ? LEGACY_SHAPES[camera.shape]
+      : camera.shape;
+  return {
+    enabled: bool(camera.enabled, d.enabled),
+    deviceId: optionalString(camera.deviceId),
+    shape: oneOf(shape, SHAPES, d.shape),
+    size: clampNumber(size, OVERLAY_MIN_SIZE, OVERLAY_MAX_SIZE, d.size),
+    x: clampNumber(camera.x, 0, 1, legacyPosition?.x ?? d.x),
+    y: clampNumber(camera.y, 0, 1, legacyPosition?.y ?? d.y),
+  };
 }
 
 export function serializePreset(preset: Preset): string {
@@ -122,13 +143,7 @@ export function deserializePreset(input: unknown): Preset {
       const source = parseSource(data.source);
       return source?.kind === "display" ? source : null;
     })(),
-    camera: {
-      enabled: bool(camera.enabled, d.camera.enabled),
-      deviceId: optionalString(camera.deviceId),
-      size: oneOf(camera.size, SIZES, d.camera.size),
-      position: oneOf(camera.position, POSITIONS, d.camera.position),
-      shape: oneOf(camera.shape, SHAPES, d.camera.shape),
-    },
+    camera: parseCamera(camera),
     microphone: {
       enabled: bool(microphone.enabled, d.microphone.enabled),
       deviceId: optionalString(microphone.deviceId),
@@ -136,7 +151,7 @@ export function deserializePreset(input: unknown): Preset {
     systemAudio: bool(data.systemAudio, d.systemAudio),
     music: {
       trackId: optionalString(music.trackId),
-      volume: clampVolume(music.volume, d.music.volume),
+      volume: clampNumber(music.volume, 0, 1, d.music.volume),
     },
     resolution: oneOf(data.resolution, RESOLUTIONS, d.resolution),
     fps: oneOf<Fps>(data.fps, [30, 60], d.fps),

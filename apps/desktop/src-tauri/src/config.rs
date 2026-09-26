@@ -19,54 +19,58 @@ pub enum CaptureSource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum OverlayPosition {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum OverlayShape {
     Circle,
-    RoundedRectangle,
+    /// A square with slightly rounded corners.
+    Square,
+    /// A 4:3 rectangle with rounded corners.
+    Rectangle,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Smallest and largest overlay height, as a fraction of the video height.
+pub const OVERLAY_MIN_SIZE: f64 = 0.08;
+pub const OVERLAY_MAX_SIZE: f64 = 0.6;
+
+/// Where the webcam goes and how big it is. Positions and sizes are
+/// relative to the video frame, so they apply at any output resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum OverlaySize {
-    Small,
-    Medium,
-    Large,
+pub struct CameraOverlay {
+    pub shape: OverlayShape,
+    /// Overlay height as a fraction of the video height.
+    pub size: f64,
+    /// Horizontal center of the overlay, from 0 (left edge) to 1 (right edge).
+    pub x: f64,
+    /// Vertical center of the overlay, from 0 (top edge) to 1 (bottom edge).
+    pub y: f64,
 }
 
-impl OverlaySize {
-    /// Overlay height as a fraction of the output video height.
-    pub fn height_fraction(self) -> f64 {
-        match self {
-            OverlaySize::Small => 0.18,
-            OverlaySize::Medium => 0.25,
-            OverlaySize::Large => 0.34,
+impl Default for CameraOverlay {
+    /// A medium circle in the bottom-right corner.
+    fn default() -> Self {
+        Self {
+            shape: OverlayShape::Circle,
+            size: 0.25,
+            x: 0.91,
+            y: 0.84,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CameraOverlay {
-    pub size: OverlaySize,
-    pub position: OverlayPosition,
-    pub shape: OverlayShape,
-}
-
-impl Default for CameraOverlay {
-    fn default() -> Self {
-        Self {
-            size: OverlaySize::Medium,
-            position: OverlayPosition::BottomRight,
-            shape: OverlayShape::Circle,
+impl CameraOverlay {
+    fn validate(&self) -> AppResult<()> {
+        let in_range = |v: f64, lo: f64, hi: f64| v.is_finite() && (lo..=hi).contains(&v);
+        if !in_range(self.size, OVERLAY_MIN_SIZE, OVERLAY_MAX_SIZE) {
+            return Err(AppError::InvalidConfig(format!(
+                "camera size must be between {OVERLAY_MIN_SIZE} and {OVERLAY_MAX_SIZE}"
+            )));
         }
+        if !in_range(self.x, 0.0, 1.0) || !in_range(self.y, 0.0, 1.0) {
+            return Err(AppError::InvalidConfig(
+                "camera position must be inside the frame".into(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -178,6 +182,7 @@ impl RecordingConfig {
             if camera.device_id.trim().is_empty() {
                 return Err(AppError::InvalidConfig("no camera selected".into()));
             }
+            camera.overlay.validate()?;
         }
         if let Some(microphone) = &self.microphone {
             if microphone.device_id.trim().is_empty() {
@@ -299,7 +304,7 @@ mod tests {
             "source": { "kind": "display", "id": 1 },
             "camera": {
                 "deviceId": "cam-1",
-                "overlay": { "size": "medium", "position": "bottomRight", "shape": "circle" }
+                "overlay": { "shape": "square", "size": 0.3, "x": 0.2, "y": 0.75 }
             },
             "microphone": { "deviceId": "mic-1" },
             "systemAudio": true,
@@ -319,8 +324,8 @@ mod tests {
         assert_eq!(config.fps, Fps::Sixty);
         assert!(config.system_audio);
         let camera = config.camera.unwrap();
-        assert_eq!(camera.overlay.position, OverlayPosition::BottomRight);
-        assert_eq!(camera.overlay.shape, OverlayShape::Circle);
+        assert_eq!(camera.overlay.shape, OverlayShape::Square);
+        assert_eq!((camera.overlay.x, camera.overlay.y), (0.2, 0.75));
         assert_eq!(config.music.unwrap().track_id, "coding-01");
     }
 
@@ -344,11 +349,30 @@ mod tests {
     #[test]
     fn camera_overlay_defaults_to_bottom_right_circle() {
         let json = sample_json().replace(
-            r#""overlay": { "size": "medium", "position": "bottomRight", "shape": "circle" }"#,
+            r#""overlay": { "shape": "square", "size": 0.3, "x": 0.2, "y": 0.75 }"#,
             r#""unused": true"#,
         );
         let config = RecordingConfig::from_json(&json).unwrap();
         assert_eq!(config.camera.unwrap().overlay, CameraOverlay::default());
+    }
+
+    #[test]
+    fn rejects_overlays_outside_the_frame_or_out_of_size_range() {
+        for overlay in [
+            r#""size": 0.3, "x": 1.2, "y": 0.5"#,
+            r#""size": 0.3, "x": 0.5, "y": -0.1"#,
+            r#""size": 0.9, "x": 0.5, "y": 0.5"#,
+            r#""size": 0.01, "x": 0.5, "y": 0.5"#,
+        ] {
+            let json = sample_json().replace(r#""size": 0.3, "x": 0.2, "y": 0.75"#, overlay);
+            assert!(
+                matches!(
+                    RecordingConfig::from_json(&json),
+                    Err(AppError::InvalidConfig(_))
+                ),
+                "{overlay}"
+            );
+        }
     }
 
     #[test]

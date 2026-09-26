@@ -202,7 +202,7 @@ export function buildRecordingConfig(preset: Preset, ctx: SetupContext): Recordi
       camera.enabled && camera.deviceId
         ? {
             deviceId: camera.deviceId,
-            overlay: { size: camera.size, position: camera.position, shape: camera.shape },
+            overlay: { shape: camera.shape, size: camera.size, x: camera.x, y: camera.y },
           }
         : null,
     microphone:
