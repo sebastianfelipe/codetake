@@ -36,7 +36,9 @@ press Stop, done. It is not a video editor.
 - **Countdown** (3, 2, 1; can be turned off), **pause/resume**, and a
   recording timer.
 - **Menu bar controls**: see what will be recorded, start, pause and stop
-  without opening the window. Closing the window keeps CodeTake there.
+  without opening the window. While recording the icon turns into a small
+  red square with a compact timer (the timer can be hidden to save space).
+  Closing the window keeps CodeTake there.
 - **Global shortcut**: <kbd>⌘</kbd><kbd>⇧</kbd><kbd>R</kbd>
   (<kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>R</kbd>) starts and stops recording.
 - **Automatic file names**, organized by day:

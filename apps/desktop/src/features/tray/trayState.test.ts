@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultPreset, type Preset } from "../settings/preset";
-import { buildTrayState, trayDetails, trayPhase, trayTitle } from "./trayState";
+import { buildTrayState, trayDetails, trayElapsed, trayPhase, trayTitle } from "./trayState";
 
 const ctx = {
   displays: [
@@ -49,12 +49,20 @@ describe("tray state", () => {
     ).toBe("idle");
   });
 
-  it("shows the timer, countdown and saving state next to the icon", () => {
-    expect(trayTitle({ phase: "idle", error: null })).toBeNull();
-    expect(trayTitle({ phase: "countdown", remaining: 2 })).toBe("Recording in 2…");
-    expect(trayTitle({ phase: "recording", elapsedMs: 762_000 })).toBe("● 00:12:42");
-    expect(trayTitle({ phase: "paused", elapsedMs: 5_000 })).toBe("❚❚ 00:00:05");
-    expect(trayTitle({ phase: "stopping", elapsedMs: 5_000 })).toBe("Saving…");
+  it("keeps the text next to the icon short", () => {
+    expect(trayTitle({ phase: "idle", error: null }, true)).toBeNull();
+    expect(trayTitle({ phase: "countdown", remaining: 2 }, true)).toBe("2");
+    expect(trayTitle({ phase: "recording", elapsedMs: 762_000 }, true)).toBe("12:42");
+    expect(trayTitle({ phase: "paused", elapsedMs: 5_000 }, true)).toBe("❚❚ 0:05");
+    expect(trayTitle({ phase: "stopping", elapsedMs: 5_000 }, true)).toBe("Saving…");
+  });
+
+  it("can hide the timer, leaving only the recording icon", () => {
+    expect(trayTitle({ phase: "recording", elapsedMs: 762_000 }, false)).toBeNull();
+    expect(trayTitle({ phase: "paused", elapsedMs: 5_000 }, false)).toBe("❚❚");
+    // The time is still shown inside the menu.
+    expect(trayElapsed({ phase: "recording", elapsedMs: 762_000 })).toBe("12:42");
+    expect(trayElapsed({ phase: "idle", error: null })).toBeNull();
   });
 
   it("describes what will be recorded", () => {

@@ -29,6 +29,8 @@ export interface Preset {
   resolution: Resolution;
   fps: Fps;
   countdown: boolean;
+  /** Show the recording timer next to the menu bar icon. */
+  menuBarTimer: boolean;
   outputDirectory: string | null;
 }
 
@@ -48,6 +50,7 @@ export const defaultPreset: Preset = {
   resolution: "source",
   fps: 30,
   countdown: true,
+  menuBarTimer: true,
   outputDirectory: null,
 };
 
@@ -158,6 +161,7 @@ export function deserializePreset(input: unknown): Preset {
     resolution: oneOf(data.resolution, RESOLUTIONS, d.resolution),
     fps: oneOf<Fps>(data.fps, [30, 60], d.fps),
     countdown: bool(data.countdown, d.countdown),
+    menuBarTimer: bool(data.menuBarTimer, d.menuBarTimer),
     outputDirectory: optionalString(data.outputDirectory),
   };
 }

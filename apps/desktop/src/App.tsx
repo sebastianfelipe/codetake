@@ -15,7 +15,7 @@ import {
   type SetupContext,
   validateSetup,
 } from "./features/settings/validation";
-import { buildTrayState, trayTitle } from "./features/tray/trayState";
+import { buildTrayState, trayElapsed, trayTitle } from "./features/tray/trayState";
 import { useBackend } from "./hooks/useBackend";
 import { usePreview } from "./hooks/usePreview";
 import { useRecording } from "./hooks/useRecording";
@@ -164,10 +164,12 @@ export function App() {
   useEffect(() => {
     if (trayState) void api.updateTray(JSON.parse(trayState)).catch(() => {});
   }, [trayState]);
-  const title = trayTitle(view);
+  const trayRecording = view.phase === "recording";
+  const title = trayTitle(view, preset.menuBarTimer);
+  const elapsed = trayElapsed(view);
   useEffect(() => {
-    void api.setTrayTitle(title).catch(() => {});
-  }, [title]);
+    void api.setTrayIndicator(trayRecording, title, elapsed).catch(() => {});
+  }, [trayRecording, title, elapsed]);
 
   if (backend.fatal) {
     return (

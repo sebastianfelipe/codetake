@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder};
+use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
@@ -17,7 +17,20 @@ use crate::error::{AppError, AppResult};
 pub const TRAY_ID: &str = "main";
 pub const EVENT_TRAY_ACTION: &str = "tray://action";
 
+/// The CodeTake glyph, as a template image that adapts to the menu bar.
 const ICON: &[u8] = include_bytes!("../icons/tray/tray-template@2x.png");
+/// Shown while recording: a red stop square, readable on any menu bar.
+const RECORDING_ICON: &[u8] = include_bytes!("../icons/tray/tray-recording@2x.png");
+
+/// The menu's status line, updated in place every second while recording
+/// (rebuilding the menu would close it if it is open), and the state it
+/// was built from.
+static STATUS_ITEM: std::sync::Mutex<Option<MenuItem<Wry>>> = std::sync::Mutex::new(None);
+static LAST_STATE: std::sync::Mutex<Option<TrayState>> = std::sync::Mutex::new(None);
+
+/// Whether the recording icon is currently shown (avoids re-setting it).
+static SHOWING_RECORDING_ICON: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +55,9 @@ pub struct TrayState {
     pub blocked_reason: Option<String>,
     /// One line per setting: "Screen: Built-in Display", "Camera: Off", ...
     pub details: Vec<String>,
+    /// Recorded time shown in the menu while recording, e.g. "12:42".
+    #[serde(default)]
+    pub elapsed: Option<String>,
 }
 
 /// Menu actions forwarded to the UI.
@@ -72,8 +88,13 @@ impl TrayAction {
 
 /// Menu entries for a state, as (id, label, enabled). `None` is a separator.
 /// Kept separate from the Tauri menu types so it can be unit tested.
-pub fn menu_entries(state: &TrayState) -> Vec<Option<(&'static str, String, bool)>> {
-    let status = match state.phase {
+/// The first, informational line of the menu.
+pub fn status_text(state: &TrayState) -> String {
+    let with_time = |label: &str| match &state.elapsed {
+        Some(elapsed) => format!("{label} — {elapsed}"),
+        None => label.to_string(),
+    };
+    match state.phase {
         TrayPhase::Idle if state.can_record => "Ready to record".to_string(),
         TrayPhase::Idle => state
             .blocked_reason
@@ -81,11 +102,14 @@ pub fn menu_entries(state: &TrayState) -> Vec<Option<(&'static str, String, bool
             .unwrap_or_else(|| "Not ready to record".into()),
         TrayPhase::Countdown => "Starting soon…".into(),
         TrayPhase::Starting => "Starting…".into(),
-        TrayPhase::Recording => "● Recording".into(),
-        TrayPhase::Paused => "Paused".into(),
+        TrayPhase::Recording => with_time("● Recording"),
+        TrayPhase::Paused => with_time("Paused"),
         TrayPhase::Saving => "Saving the recording…".into(),
-    };
+    }
+}
 
+pub fn menu_entries(state: &TrayState) -> Vec<Option<(&'static str, String, bool)>> {
+    let status = status_text(state);
     let mut entries = vec![Some(("status", status, false)), None];
     entries.extend(
         state
@@ -138,7 +162,13 @@ fn build_menu(app: &AppHandle, state: &TrayState) -> tauri::Result<Menu<Wry>> {
                 if id == "record" || id == "stop" {
                     item = item.accelerator("CmdOrCtrl+Shift+R");
                 }
-                builder.item(&item.build(app)?)
+                let item = item.build(app)?;
+                if id == "status" {
+                    if let Ok(mut status) = STATUS_ITEM.lock() {
+                        *status = Some(item.clone());
+                    }
+                }
+                builder.item(&item)
             }
         };
     }
@@ -187,15 +217,42 @@ pub fn update_tray(app: AppHandle, state: TrayState) -> AppResult<()> {
         return Ok(());
     };
     let menu = build_menu(&app, &state).map_err(tray_error)?;
-    tray.set_menu(Some(menu)).map_err(tray_error)
+    tray.set_menu(Some(menu)).map_err(tray_error)?;
+    if let Ok(mut last) = LAST_STATE.lock() {
+        *last = Some(state);
+    }
+    Ok(())
 }
 
-/// Text next to the menu bar icon (macOS), e.g. the recording timer.
+/// Updates the menu bar indicator: the red stop icon while `recording`,
+/// optional text next to it (macOS, e.g. a compact timer), and the recorded
+/// time on the menu's status line.
 #[tauri::command]
-pub fn set_tray_title(app: AppHandle, title: Option<String>) -> AppResult<()> {
+pub fn set_tray_indicator(
+    app: AppHandle,
+    recording: bool,
+    title: Option<String>,
+    elapsed: Option<String>,
+) -> AppResult<()> {
+    use std::sync::atomic::Ordering;
+
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return Ok(());
     };
+    if SHOWING_RECORDING_ICON.swap(recording, Ordering::Relaxed) != recording {
+        let icon =
+            Image::from_bytes(if recording { RECORDING_ICON } else { ICON }).map_err(tray_error)?;
+        tray.set_icon(Some(icon)).map_err(tray_error)?;
+        tray.set_icon_as_template(!recording).map_err(tray_error)?;
+    }
+    if let (Ok(mut last), Ok(status)) = (LAST_STATE.lock(), STATUS_ITEM.lock()) {
+        if let (Some(state), Some(item)) = (last.as_mut(), status.as_ref()) {
+            if state.elapsed != elapsed {
+                state.elapsed = elapsed;
+                let _ = item.set_text(status_text(state));
+            }
+        }
+    }
     tray.set_title(title.as_deref()).map_err(tray_error)
 }
 
@@ -213,7 +270,9 @@ mod tests {
     }
 
     fn status(state: &TrayState) -> String {
-        menu_entries(state)[0].clone().unwrap().1
+        let text = menu_entries(state)[0].clone().unwrap().1;
+        assert_eq!(text, status_text(state));
+        text
     }
 
     #[test]
@@ -280,6 +339,16 @@ mod tests {
         assert!(all.contains(&("show", true)));
         assert!(all.contains(&("folder", true)));
         assert_eq!(all.last(), Some(&("quit", true)));
+    }
+
+    #[test]
+    fn shows_the_recorded_time_in_the_menu() {
+        let state = TrayState {
+            phase: TrayPhase::Recording,
+            elapsed: Some("12:42".into()),
+            ..TrayState::default()
+        };
+        assert_eq!(status(&state), "● Recording — 12:42");
     }
 
     #[test]

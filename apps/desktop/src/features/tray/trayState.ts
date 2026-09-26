@@ -1,7 +1,7 @@
 // What the menu bar icon shows, derived from the UI state. The backend only
 // renders it (src-tauri/src/tray.rs).
 
-import { formatDuration, formatResolution } from "../../lib/format";
+import { formatCompactDuration, formatResolution } from "../../lib/format";
 import type { RecordingView } from "../recording/machine";
 import type { Preset } from "../settings/preset";
 import { RESOLUTION_LABELS } from "../settings/resolution";
@@ -28,22 +28,31 @@ export function trayPhase(view: RecordingView): TrayPhase {
   }
 }
 
-/** Text next to the menu bar icon, e.g. "● 00:12:42". */
-export function trayTitle(view: RecordingView): string | null {
+/**
+ * Text next to the menu bar icon. Kept short because menu bar space is
+ * scarce: while recording the icon itself turns into a red stop square, so
+ * the text is only the timer (and can be turned off).
+ */
+export function trayTitle(view: RecordingView, showTimer: boolean): string | null {
   switch (view.phase) {
     case "countdown":
-      return `Recording in ${view.remaining}…`;
-    case "starting":
-      return "Starting…";
+      return String(view.remaining);
     case "recording":
-      return `● ${formatDuration(view.elapsedMs)}`;
+      return showTimer ? formatCompactDuration(view.elapsedMs) : null;
     case "paused":
-      return `❚❚ ${formatDuration(view.elapsedMs)}`;
+      return showTimer ? `❚❚ ${formatCompactDuration(view.elapsedMs)}` : "❚❚";
     case "stopping":
       return "Saving…";
     default:
       return null;
   }
+}
+
+/** Recorded time shown in the menu's status line. */
+export function trayElapsed(view: RecordingView): string | null {
+  return view.phase === "recording" || view.phase === "paused"
+    ? formatCompactDuration(view.elapsedMs)
+    : null;
 }
 
 const SHAPE_LABELS = { circle: "Circle", square: "Square", rectangle: "Wide" } as const;

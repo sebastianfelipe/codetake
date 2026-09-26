@@ -18,6 +18,7 @@ const custom: Preset = {
   resolution: "1440p",
   fps: 60,
   countdown: false,
+  menuBarTimer: false,
   outputDirectory: "/Users/dev/Videos",
 };
 

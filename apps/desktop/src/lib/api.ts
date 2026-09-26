@@ -51,7 +51,8 @@ export const api = {
   allowMedia: (path: string) => invoke<void>("allow_media", { path }),
   musicTrackFile: (trackId: string) => invoke<string>("music_track_file", { trackId }),
   updateTray: (state: TrayState) => invoke<void>("update_tray", { state }),
-  setTrayTitle: (title: string | null) => invoke<void>("set_tray_title", { title }),
+  setTrayIndicator: (recording: boolean, title: string | null, elapsed: string | null) =>
+    invoke<void>("set_tray_indicator", { recording, title, elapsed }),
 };
 
 export type TrayAction = "record" | "stop" | "pause" | "resume" | "cancelCountdown" | "showFolder";

@@ -97,7 +97,7 @@ pub fn run() {
             commands::music_track_file,
             commands::export_recording,
             tray::update_tray,
-            tray::set_tray_title,
+            tray::set_tray_indicator,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start the CodeTake application");

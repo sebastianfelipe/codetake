@@ -284,6 +284,11 @@ export function SettingsPanel({
           checked={preset.countdown}
           onChange={(value) => set("countdown", value)}
         />
+        <Toggle
+          label="Show timer in menu bar"
+          checked={preset.menuBarTimer}
+          onChange={(value) => set("menuBarTimer", value)}
+        />
         {issueFor(issues, "output")}
       </Section>
     </fieldset>
