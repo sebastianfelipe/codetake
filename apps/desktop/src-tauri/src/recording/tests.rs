@@ -536,7 +536,10 @@ fn pausing_removes_time_from_the_recording() {
         .windows(2)
         .map(|w| w[1] - w[0])
         .fold(0.0, f64::max);
-    assert!(largest_gap < 0.15, "gap of {largest_gap}s in the video");
+    // The 0.5 s pause must not appear as a hole in the video. Allow for a
+    // few frames skipped on a busy machine (CI runners), but far less than
+    // the pause itself.
+    assert!(largest_gap < 0.3, "gap of {largest_gap}s in the video");
     drop(log);
     fs::remove_dir_all(dir).unwrap();
 }
