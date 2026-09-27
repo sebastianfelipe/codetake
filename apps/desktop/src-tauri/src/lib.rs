@@ -104,11 +104,11 @@ pub fn run() {
 
     app.run(|app, event| match event {
         // Cmd+Q or quitting from the Dock while recording: finalize first.
-        RunEvent::ExitRequested { api, code, .. } if code.is_none() => {
-            if commands::is_recording(app) {
-                api.prevent_exit();
-                quit(app);
-            }
+        RunEvent::ExitRequested { api, code, .. }
+            if code.is_none() && commands::is_recording(app) =>
+        {
+            api.prevent_exit();
+            quit(app);
         }
         // Clicking the Dock icon brings the hidden window back.
         #[cfg(target_os = "macos")]
