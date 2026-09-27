@@ -1,9 +1,10 @@
 name: Release
 
-# Builds the installers for a release and attaches them to its GitHub
-# Release. Normally started by the Release Please workflow right after it
-# creates the vX.Y.Z tag and release; it can also be run by hand (Actions →
-# Release → Run workflow) to rebuild the installers of an existing tag.
+# Builds the installers for a release, attaches them to its GitHub Release
+# and publishes it. Normally started by the Release Please workflow right
+# after it creates the vX.Y.Z tag and draft release; it can also be run by
+# hand (Actions → Release → Run workflow) for an existing tag, e.g. to
+# rebuild installers or retry after a failed build.
 
 on:
   workflow_call:
@@ -11,6 +12,10 @@ on:
       tag:
         description: Release tag to build, e.g. v0.2.0
         required: true
+        type: string
+      release-id:
+        description: ID of the (draft) GitHub Release to upload to
+        required: false
         type: string
   workflow_dispatch:
     inputs:
@@ -46,6 +51,27 @@ jobs:
               exit 1
             fi
           done
+      # Draft releases can't be looked up by tag, so find the release's ID
+      # (given by Release Please, or looked up for manual runs).
+      - name: Find the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          GIVEN_ID: ${{ inputs.release-id }}
+        run: |
+          id="$GIVEN_ID"
+          if [ -z "$id" ]; then
+            id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+              --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
+          fi
+          if [ -z "$id" ]; then
+            echo "::error::No GitHub Release found for $TAG"
+            exit 1
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+    outputs:
+      release-id: ${{ steps.release.outputs.id }}
 
   build:
     needs: verify
@@ -90,8 +116,8 @@ jobs:
           workspaces: apps/desktop/src-tauri
       - run: pnpm install --frozen-lockfile
       # Produces .dmg/.app on macOS, .msi/.exe on Windows, and .AppImage,
-      # .deb and .rpm on Linux, and uploads them to the tag's existing
-      # release (created by Release Please, with the changelog as its notes).
+      # .deb and .rpm on Linux, and uploads them to the tag's release
+      # (created by Release Please, with the changelog as its notes).
       # Windows and Linux builds report recording as not implemented yet.
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -110,7 +136,21 @@ jobs:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }}
-          tagName: ${{ inputs.tag }}
-          releaseName: CodeTake ${{ inputs.tag }}
-          releaseDraft: false
-          prerelease: false
+          releaseId: ${{ needs.verify.outputs.release-id }}
+
+  # Publish only once every installer is attached. If a build fails, the
+  # release stays a draft; fix it and re-run this workflow for the tag.
+  publish:
+    name: Publish release
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.verify.outputs.release-id }}
+        run: |
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false \
+            --jq '"Published \(.tag_name): \(.html_url)"'
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            --jq '"Assets: " + ([.assets[].name] | join(", "))'
