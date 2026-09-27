@@ -49,8 +49,12 @@ cargo run --release --example record -- --seconds 5 --camera --microphone \
 
 swift ../../../scripts/inspect-recording.swift /tmp/rec/*/coding-session-*.mp4 frame.png
 
-# export a recording with music (music volume 0.3, voice volume 1.0)
-cargo run --release --example export -- /tmp/rec/<day>/<file>.mp4 ../../../assets/music/coding-01.m4a 0.3 1.0
+# composite the raw camera onto the raw screen (circle centered at 70%/35%, 35% tall), with music
+cargo run --release --example composite -- /tmp/rec/<day>/raw/<name>-screen.mp4 \
+  /tmp/rec/<day>/raw/<name>-camera.mp4 /tmp/final.mp4 circle:0.7:0.35:0.35 ../../../assets/music/coding-01.m4a
+
+# re-mix only the audio of a recording with music (music volume 0.3, voice volume 1.0)
+cargo run --release --example export -- /tmp/rec/<day>/raw/<name>-screen.mp4 ../../../assets/music/coding-01.m4a 0.3 1.0
 ```
 
 The example drives the real backend and prints status updates;

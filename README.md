@@ -23,15 +23,15 @@ press Stop, done. It is not a video editor.
 - **Screen capture** of a whole display or a single window, at the source's
   native resolution or downscaled to 1080p, 1440p or 4K (never upscaled),
   at 30 or 60 FPS.
-- **Webcam overlay** composited into the video: drag it anywhere in the
-  preview, resize it, and choose a circle, square or wide rectangle.
+- **Webcam overlay**: drag it anywhere in the preview, resize it, and choose
+  a circle, square or wide rectangle — and adjust it again after recording.
 - **Microphone** recording with a live level meter.
 - **System audio** (sound from other apps), mixed into the same track.
-- **Review and background music**: after you stop, play the recording back,
-  add one of the bundled public-domain (CC0) loops, and balance the music
-  against your voice while listening. Export writes a copy with music (the
-  video is copied untouched, so it is fast and lossless); the raw recording
-  is always kept.
+- **Review before saving**: recordings are kept raw (screen and webcam in
+  separate files). After you stop, play it back, move or resize the webcam,
+  add one of the bundled public-domain (CC0) music loops and balance it
+  against your voice while listening, then save the final MP4. The raw files
+  are always kept.
 - **Live preview** of the composition (screen and webcam) before you record.
 - **Countdown** (3, 2, 1; can be turned off), **pause/resume**, and a
   recording timer.

@@ -184,7 +184,10 @@ export function SettingsPanel({
                 onChange={(size) => update((p) => ({ ...p, camera: { ...p.camera, size } }))}
               />
             </div>
-            <Hint>Drag the camera in the preview to place it anywhere.</Hint>
+            <Hint>
+              Drag the camera in the preview to place it anywhere. You can still adjust it after
+              recording.
+            </Hint>
             {issueFor(issues, "camera")}
           </>
         )}

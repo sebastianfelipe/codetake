@@ -15,32 +15,43 @@
 - A keyframe every two seconds, and the index at the start of the file
   ("fast start"), so players and upload sites can seek immediately.
 
-## Adding music after recording
+## Raw recordings and the review step
 
-Recordings are always saved raw: screen, webcam, microphone and system
-audio, without music. After stopping, the review screen plays the
-recording and lets you pick a track and set two volumes — **music** and
-**voice** (the recorded audio, which can be boosted up to 200%) — while
-listening. The preview uses the same fades and balance as the export.
+Recordings are saved **raw**, in the day's `raw/` folder:
 
-**Export with music** writes `…-with-music.mp4` next to the original:
+- `<name>-screen.mp4` — the screen with the microphone and system audio;
+- `<name>-camera.mp4` — the webcam (when enabled), written with the same
+  timestamps as the screen, so the two line up frame for frame.
 
-- the H.264 video is copied sample for sample (no re-encoding, no quality
-  loss; an 8-second 2704×1756 recording exports in under 0.1 s);
-- the recorded audio is decoded, the music is looped under it with a
-  1.5-second fade-in and a 3-second fade-out at the end of the video, the
-  two are mixed with the chosen volumes and soft-limited so peaks never
-  clip, and the result is encoded to AAC again;
-- the file is written under a hidden temporary name and only appears when
-  complete, so a failed export never leaves a broken file.
+After stopping, the review screen plays them together and lets you make the
+last adjustments: **move, resize, reshape or hide the webcam**, pick
+background music, and set two volumes — **music** and **voice** (the
+recorded audio, boostable up to 200%). The preview uses the same geometry,
+fades and balance as the export.
+
+**Save video** writes `<day>/<name>.mp4`, doing as little work as possible:
+
+- webcam shown → the webcam is composited onto the screen at its new place
+  and the video is encoded again with the hardware H.264 encoder (a 5-second
+  2704×1756 recording renders in about 1.6 s);
+- no webcam but music or a changed voice volume → only the audio is re-mixed
+  and the video is copied sample for sample (under 0.1 s for 8 seconds);
+- otherwise → the screen recording is copied.
+
+Music loops under the video with a 1.5-second fade-in and a 3-second
+fade-out, and the mix is soft-limited so peaks never clip. Exports are
+written under a hidden temporary name and appear only when complete. The raw
+files are never modified; leaving the review without saving asks first.
 
 ## Files
 
 ```
 ~/Movies/CodeTake/
 └── 2026-09-26/
-    ├── coding-session-2026-09-26-09-32-14.mp4            finished recording (raw)
-    ├── coding-session-2026-09-26-09-32-14-with-music.mp4 exported copy with music
+    ├── coding-session-2026-09-26-09-32-14.mp4            the saved video
+    ├── raw/
+    │   ├── coding-session-2026-09-26-09-32-14-screen.mp4 raw screen + audio
+    │   └── coding-session-2026-09-26-09-32-14-camera.mp4 raw webcam
     ├── coding-session-2026-09-26-11-04-32.partial.mov    being recorded
     ├── coding-session-2026-09-25-18-00-01-recovered.mp4  recovered after a crash
     └── coding-session-2026-09-25-19-12-44-incomplete.mov could not be finalized
@@ -89,8 +100,9 @@ MP4 would be unplayable after a crash.
 
 - macOS only for now (see the README).
 - The final ~2 seconds can be lost in a crash (the last fragment).
-- The webcam overlay is composited on the CPU. Even at 4K60 this is a
-  small amount of work, but it is not free.
+- The webcam is composited on the CPU when saving; the video is then
+  encoded again, which takes a moment for long recordings (about 3× faster
+  than real time at 2704×1756 on Apple silicon).
 - Window capture keeps the window's size at the start of the recording; if
   the window is resized, its content is scaled into that size.
 - System audio excludes CodeTake itself, and the preview does not play

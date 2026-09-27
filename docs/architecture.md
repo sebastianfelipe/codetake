@@ -10,7 +10,7 @@ apps/desktop/
 │   ├── features/recording/  recording flow state machine and controls
 │   ├── features/settings/   presets, validation, settings panel
 │   ├── features/preview/    overlay geometry (mirrors the compositor)
-│   ├── features/review/     review screen: playback, music, export
+│   ├── features/review/     review: playback, webcam placement, music, save
 │   ├── features/tray/       menu bar state
 │   ├── hooks/               backend data, preview, recording, settings
 │   ├── lib/                 typed Tauri bindings, formatting, paths
@@ -21,7 +21,7 @@ apps/desktop/
     ├── config.rs            RecordingConfig: parsing, validation, sizes
     ├── output.rs            output folders, file names, crash recovery
     ├── music.rs             bundled music catalog
-    ├── export.rs            music bed, fades and mixing for exports
+    ├── export.rs            export planning, music bed, fades and mixing
     ├── recording/
     │   ├── capture.rs       capture/encoder traits
     │   ├── recorder.rs      the recording pipeline
@@ -39,22 +39,25 @@ apps/desktop/
 ## Recording pipeline
 
 ```
-ScreenCapture ──▶ latest screen frame ─┐
-CameraCapture ──▶ latest camera frame ─┼─▶ video thread (fixed fps) ─┐
-                                       │                              ├─▶ VideoEncoder ─▶ file
-MicrophoneCapture ─┐                   │                              │
-SystemAudioCapture ┼─▶ AudioMixer ◀─ music                            │
-                   └─────────────────▶ audio thread (every 20 ms) ────┘
+ScreenCapture ──▶ latest screen frame ─┐                 ┌─▶ screen encoder ─▶ raw/<name>-screen.mp4
+CameraCapture ──▶ latest camera frame ─┴▶ video thread ──┤        ▲
+                                          (fixed fps)    └─▶ camera encoder ─▶ raw/<name>-camera.mp4
+MicrophoneCapture ─┐                                              │
+SystemAudioCapture ┴─▶ AudioMixer ─▶ audio thread (every 20 ms) ──┘
 ```
+
+The screen and the webcam are written to separate raw files with the same
+timestamps. The final video is produced after recording, in the review step
+(see [Export](#export)).
 
 - **Timing.** Every capture API on a platform timestamps samples with the
   same monotonic host clock. The `MediaClock` maps host time onto the output
   timeline, starting at zero and removing paused intervals.
-- **Video.** A video thread ticks at the chosen frame rate, takes the most
-  recent screen and camera frames, copies the screen into an encoder buffer
-  and blends the webcam overlay on top. Running at a fixed rate (rather than
-  on screen updates) keeps the webcam moving while the screen is static. The
-  OS scales the screen capture to the output size.
+- **Video.** A video thread ticks at the chosen frame rate and writes the
+  most recent screen frame and the most recent camera frame to their files
+  with the same timestamp. Running at a fixed rate (rather than on screen
+  updates) keeps the webcam moving while the screen is static. The OS scales
+  the screen capture to the output size.
 - **Audio.** Sources are converted to 48 kHz interleaved stereo `f32`, placed
   on the timeline by timestamp, and mixed 200 ms behind real time so late
   buffers still land in the right place. A device that stops delivering
@@ -75,16 +78,23 @@ The pipeline is tested end to end against a fake platform
 (`recording/tests.rs`): real threads and timing, synthetic captures, and a
 recording encoder.
 
-## Export with music
+## Export
 
-Music is added after recording, in the review step. `export.rs` holds the
-platform-independent parts (looping music bed, fade envelope, mixing with
-separate music and voice volumes, soft limiting, file names);
-`Platform::export_recording` reads the recording and writes the new file.
-On macOS that is `AVAssetReader` + `AVAssetWriter`: video samples are passed
-through untouched, audio is decoded to 48 kHz float, mixed and re-encoded
-to AAC, and the two tracks are interleaved by timestamp. The review UI's
-preview mirrors the same envelope and balance (`features/review/mix.ts`).
+`export.rs` decides how to produce the final video from the raw files and
+the review choices (`plan_export`) and holds the platform-independent parts:
+the looping music bed with fades, mixing with separate music and voice
+volumes, and soft limiting. The platform does the media work:
+
+- `Platform::composite_recording` — decodes the screen and camera files in
+  step, blends the latest camera frame onto each screen frame with the
+  shared compositor (`video/compositor.rs`), re-mixes the audio and encodes
+  a plain MP4 (macOS: `AVAssetReader` + `AVAssetWriter` in export mode);
+- `Platform::export_recording` — copies the video samples untouched and
+  re-mixes only the audio, when the webcam is hidden.
+
+The review UI mirrors the same overlay geometry
+(`features/preview/overlay.ts`) and audio envelope and balance
+(`features/review/mix.ts`), so the preview matches the saved file.
 
 ## Recording session model
 
