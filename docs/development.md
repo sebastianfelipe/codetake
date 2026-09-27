@@ -93,9 +93,46 @@ Developer ID signature and notarization; see the
 entitlements needed for the hardened runtime (camera, microphone) are in
 `src-tauri/Entitlements.plist`.
 
-The release workflow (`.github/workflows/release.yml`) builds macOS, Windows
-and Linux bundles when a `v*` tag is pushed and attaches them to a draft
-GitHub Release.
+## Releases
+
+Releases are automated with
+[Release Please](https://github.com/googleapis/release-please) and driven by
+the Conventional Commit messages on `main`:
+
+1. Every push to `main` updates an open pull request titled
+   **`chore(main): release X.Y.Z`**. It shows the next version before
+   anything is published, the `CHANGELOG.md` entry, and the version bumped in
+   every file that has one (`apps/desktop/src-tauri/tauri.conf.json`,
+   `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml` and
+   `Cargo.lock`).
+2. **Merging that pull request releases it**: Release Please creates the
+   `vX.Y.Z` tag and the GitHub Release (with the changelog as release notes),
+   then the same workflow builds the installers — a universal macOS `.dmg`,
+   Windows `.msi`/`.exe`, and Linux `.AppImage`/`.deb`/`.rpm` — and uploads
+   them to that release. Building takes roughly 10–15 minutes.
+
+How the next version is chosen (while the version is below 1.0.0):
+
+| Commits since the last release | Next version |
+| --- | --- |
+| only `fix:` / `perf:` | patch, e.g. 0.1.0 → 0.1.1 |
+| at least one `feat:` | minor, e.g. 0.1.0 → 0.2.0 |
+| a breaking change (`feat!:` or `BREAKING CHANGE:`) | minor, e.g. 0.1.0 → 0.2.0 (major after 1.0.0) |
+| only `docs:`, `chore:`, `ci:`, `test:`, `style:`, `refactor:` | no release pull request |
+
+To force a specific version, add `Release-As: 1.0.0` to the body of a commit
+on `main`. Never edit the version numbers by hand: the release pull request
+does it, and the build refuses to run if the tag and the app's version
+disagree.
+
+To rebuild the installers of an existing release, run **Actions → Release →
+Run workflow** with its tag.
+
+Release Please runs with the repository's `GITHUB_TOKEN`, which requires
+*Settings → Actions → General → Workflow permissions → Allow GitHub Actions to
+create and approve pull requests*. Pull requests opened with that token don't
+trigger the CI workflow; the release pull request only changes version
+numbers and the changelog.
 
 ## Assets
 

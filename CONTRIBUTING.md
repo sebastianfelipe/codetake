@@ -48,6 +48,11 @@ Common types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`,
 `ci`. Useful scopes: `ui`, `recording`, `audio`, `storage`, `settings`,
 `macos`, `windows`, `linux`, `app`, `brand`.
 
+Commit types decide the next release: `fix`/`perf` bump the patch version,
+`feat` the minor version, and a breaking change (`feat!:`) the major version
+(minor while below 1.0). Releases are prepared automatically; see
+[Releases](docs/development.md#releases). Don't change version numbers by hand.
+
 ## Code style
 
 - TypeScript: strict mode, no `any`, formatted and linted with Biome.
