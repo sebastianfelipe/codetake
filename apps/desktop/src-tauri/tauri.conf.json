@@ -44,7 +44,7 @@
     "category": "Video",
     "shortDescription": "Record your code.",
     "longDescription": "A free, open-source, local-first screen and webcam recorder for developers.",
-    "copyright": "\u00a9 2026 CodeTake contributors. MIT License.",
+    "copyright": "© 2026 CodeTake contributors. MIT License.",
     "license": "MIT",
     "macOS": {
       "minimumSystemVersion": "13.0",
