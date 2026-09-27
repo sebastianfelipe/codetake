@@ -1,0 +1,55 @@
+[package]
+name = "codetake"
+version = "0.1.0"
+description = "Record your code. A local-first screen and webcam recorder for developers."
+authors = ["CodeTake contributors"]
+license = "MIT"
+repository = "https://github.com/sebastianfelipe/codetake"
+edition = "2021"
+rust-version = "1.85"
+
+[[bin]]
+# The executable users see (Activity Monitor, the menu bar, `ps`).
+name = "CodeTake"
+path = "src/main.rs"
+
+[lib]
+name = "codetake_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "protocol-asset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+log = "0.4"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
+parking_lot = "0.12"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-global-shortcut = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+dispatch2 = "0.3"
+objc2-foundation = "0.3"
+objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
+objc2-core-media = "0.3"
+objc2-core-video = "0.3"
+objc2-core-audio-types = "0.3"
+objc2-audio-toolbox = "0.3"
+objc2-av-foundation = { version = "0.3", features = ["objc2-core-media"] }
+objc2-avf-audio = "0.3"
+objc2-screen-capture-kit = "0.3"

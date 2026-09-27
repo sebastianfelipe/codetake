@@ -1,0 +1,23 @@
+{
+  "name": "codetake",
+  "private": true,
+  "description": "Record your code. A free, open-source, local-first screen and webcam recorder for developers.",
+  "license": "MIT",
+  "packageManager": "pnpm@12.4.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @codetake/desktop tauri dev",
+    "build": "pnpm --filter @codetake/desktop tauri build",
+    "typecheck": "pnpm --filter @codetake/desktop typecheck",
+    "test": "pnpm --filter @codetake/desktop test",
+    "check": "biome check .",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "build:local": "scripts/build-local.sh"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14"
+  }
+}
