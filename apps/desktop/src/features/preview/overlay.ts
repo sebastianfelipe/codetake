@@ -70,3 +70,27 @@ export const OVERLAY_PRESETS = {
   bottomLeft: { x: 0.09, y: 0.84 },
   bottomRight: { x: 0.91, y: 0.84 },
 } as const;
+
+/**
+ * The overlay's box and corner radius as percentages of the frame, for
+ * positioning an element over a video of that size.
+ */
+export function overlayPercentages(
+  frameWidth: number,
+  frameHeight: number,
+  overlay: CameraOverlay,
+): { left: number; top: number; width: number; height: number; radius: string } {
+  const rect = overlayRect(frameWidth, frameHeight, overlay);
+  const radius = overlayCornerRadius(rect, overlay);
+  const pct = (value: number, of: number) => (value / of) * 100;
+  return {
+    left: pct(rect.x, frameWidth),
+    top: pct(rect.y, frameHeight),
+    width: pct(rect.width, frameWidth),
+    height: pct(rect.height, frameHeight),
+    radius:
+      overlay.shape === "circle"
+        ? "50%"
+        : `${pct(radius, rect.width)}% / ${pct(radius, rect.height)}%`,
+  };
+}

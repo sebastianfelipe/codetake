@@ -116,7 +116,15 @@ export interface BackendError {
 }
 
 export interface RecordingOutcome {
+  /** The raw screen recording (screen, microphone, system audio). */
   path: string | null;
+  /** The raw webcam recording, if the camera was on. */
+  cameraPath: string | null;
+  /** Where "Save video" writes the finished video. */
+  exportPath: string;
+  /** The webcam layout chosen before recording. */
+  overlay: CameraOverlay | null;
+  fps: number;
   durationMs: number;
   complete: boolean;
   error: BackendError | null;

@@ -256,6 +256,12 @@ export function App() {
               outcome={{ ...view.outcome, path: view.outcome.path }}
               tracks={data.tracks}
               music={preset.music}
+              defaultOverlay={{
+                shape: preset.camera.shape,
+                size: preset.camera.size,
+                x: preset.camera.x,
+                y: preset.camera.y,
+              }}
               onMusicChange={(music) => settings.update((p) => ({ ...p, music }))}
               revealLabel={revealLabel(data.capabilities.os)}
               onDone={recording.dismiss}

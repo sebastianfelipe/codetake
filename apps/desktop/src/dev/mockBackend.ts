@@ -194,7 +194,7 @@ export function installMockBackend(): void {
           return null;
         case "music_track_file":
           return `/mock/music/${String(payload.trackId)}.m4a`;
-        case "export_recording": {
+        case "export_video": {
           const progress = payload.progress as Channel<number> | undefined;
           return new Promise((resolve) => {
             let fraction = 0;
@@ -204,7 +204,7 @@ export function installMockBackend(): void {
               if (fraction >= 1) {
                 window.clearInterval(timer);
                 resolve(
-                  "/Users/dev/Movies/CodeTake/2026-09-26/coding-session-2026-09-26-09-32-14-with-music.mp4",
+                  "/Users/dev/Movies/CodeTake/2026-09-26/coding-session-2026-09-26-09-32-14.mp4",
                 );
               }
             }, 150);
@@ -234,7 +234,13 @@ export function installMockBackend(): void {
         case "stop_recording": {
           window.clearInterval(statusTimer);
           const outcome: RecordingOutcome = {
-            path: "/Users/dev/Movies/CodeTake/2026-09-26/coding-session-2026-09-26-09-32-14.mp4",
+            path: "/Users/dev/Movies/CodeTake/2026-09-26/raw/coding-session-2026-09-26-09-32-14-screen.mp4",
+            cameraPath:
+              "/Users/dev/Movies/CodeTake/2026-09-26/raw/coding-session-2026-09-26-09-32-14-camera.mp4",
+            exportPath:
+              "/Users/dev/Movies/CodeTake/2026-09-26/coding-session-2026-09-26-09-32-14.mp4",
+            overlay: { shape: "circle", size: 0.25, x: 0.91, y: 0.84 },
+            fps: 30,
             durationMs: elapsed(),
             complete: true,
             error: null,

@@ -14,7 +14,11 @@ function run(actions: RecordingAction[], from: RecordingView = initialView): Rec
 }
 
 const outcome: RecordingOutcome = {
-  path: "/Movies/CodeTake/2026-09-26/coding-session.mp4",
+  path: "/Movies/CodeTake/2026-09-26/raw/coding-session-screen.mp4",
+  cameraPath: null,
+  exportPath: "/Movies/CodeTake/2026-09-26/coding-session.mp4",
+  overlay: null,
+  fps: 30,
   durationMs: 5000,
   complete: true,
   error: null,

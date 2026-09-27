@@ -44,7 +44,17 @@ describe("tray state", () => {
     expect(
       trayPhase({
         phase: "finished",
-        outcome: { path: null, durationMs: 0, complete: false, error: null, warnings: [] },
+        outcome: {
+          path: null,
+          cameraPath: null,
+          exportPath: "/x.mp4",
+          overlay: null,
+          fps: 30,
+          durationMs: 0,
+          complete: false,
+          error: null,
+          warnings: [],
+        },
       }),
     ).toBe("idle");
   });

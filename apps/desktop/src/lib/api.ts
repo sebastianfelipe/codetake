@@ -6,6 +6,7 @@ import type { TrayState } from "../features/tray/trayState";
 import type {
   BackendError,
   CameraInfo,
+  CameraOverlay,
   CaptureSource,
   DisplayInfo,
   MicrophoneInfo,
@@ -99,21 +100,27 @@ export function startPreview(
   return invoke<void>("start_preview", { request, frames });
 }
 
+/** Mirrors `export::ExportSettings`. */
 export interface ExportSettings {
-  source: string;
-  trackId: string;
+  screen: string;
+  camera: string | null;
+  /** Where to place the webcam, or null to leave it out. */
+  overlay: CameraOverlay | null;
+  trackId: string | null;
   musicVolume: number;
   recordingVolume: number;
+  destination: string;
+  fps: number;
 }
 
-/** Exports the recording with music; resolves to the new file's path. */
-export function exportRecording(
+/** Exports the finished video; resolves to its path. */
+export function exportVideo(
   settings: ExportSettings,
   onProgress: (fraction: number) => void,
 ): Promise<string> {
   const progress = new Channel<number>();
   progress.onmessage = onProgress;
-  return invoke<string>("export_recording", { settings, progress });
+  return invoke<string>("export_video", { settings, progress });
 }
 
 export const events = {

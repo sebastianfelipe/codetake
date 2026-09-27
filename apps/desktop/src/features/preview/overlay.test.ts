@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CameraOverlay } from "../../types/backend";
-import { clampOverlay, overlayCornerRadius, overlayRect } from "./overlay";
+import { clampOverlay, overlayCornerRadius, overlayPercentages, overlayRect } from "./overlay";
 
 const circle: CameraOverlay = { shape: "circle", size: 0.25, x: 0.91, y: 0.84 };
 
@@ -38,5 +38,15 @@ describe("overlay geometry", () => {
     // A 300 px square in a 1000×500 frame: center at least 150 px from the edges.
     expect(clamped.x).toBeCloseTo(0.15);
     expect(clamped.y).toBeCloseTo(0.7);
+  });
+
+  it("expresses the overlay as percentages for positioning over a video", () => {
+    const box = overlayPercentages(1000, 500, { shape: "square", size: 0.2, x: 0.5, y: 0.5 });
+    expect(box.left).toBeCloseTo(45);
+    expect(box.top).toBeCloseTo(40);
+    expect(box.width).toBeCloseTo(10);
+    expect(box.height).toBeCloseTo(20);
+    expect(box.radius).toBe("12% / 12%");
+    expect(overlayPercentages(1000, 500, circle).radius).toBe("50%");
   });
 });
