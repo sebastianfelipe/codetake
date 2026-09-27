@@ -4,8 +4,9 @@ name: Release Please
 # pull request up to date: the next version (from Conventional Commits:
 # fix → patch, feat → minor, breaking → minor while below 1.0), the
 # CHANGELOG, and the version in every file that has one. Merging that pull
-# request creates the vX.Y.Z tag and GitHub Release, and this workflow then
-# builds the installers and attaches them to it.
+# request creates the vX.Y.Z tag and a draft GitHub Release; this workflow
+# then builds the installers, attaches them, and publishes the release, so a
+# published release always has its installers.
 
 on:
   push:
@@ -22,6 +23,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      release_id: ${{ steps.release.outputs.id }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -38,4 +40,5 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
+      release-id: ${{ needs.release-please.outputs.release_id }}
     secrets: inherit
