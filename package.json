@@ -14,7 +14,8 @@
     "test": "pnpm --filter @codetake/desktop test",
     "check": "biome check .",
     "format": "biome format --write .",
-    "lint": "biome lint ."
+    "lint": "biome lint .",
+    "build:local": "scripts/build-local.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14"

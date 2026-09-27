@@ -64,7 +64,23 @@ duration of a file and can save a frame to check the composition.
 ## Building a release
 
 ```sh
-pnpm build
+pnpm build:local   # universal .app and .dmg for this Mac, signed with your certificate
+pnpm build         # same, for the current architecture, ad-hoc signed
+```
+
+**Permissions and signing.** macOS remembers Screen Recording, Camera and
+Microphone permissions per code signature. An ad-hoc signature changes with
+every build, so a rebuilt, ad-hoc signed app looks like a new app and asks
+again even though System Settings still shows CodeTake as allowed.
+`pnpm build:local` signs with a certificate from your keychain (a free
+*Apple Development* certificate from Xcode → Settings → Accounts is enough),
+which keeps the identity stable across builds. If you already granted
+permissions to an older build, reset them once and grant them again:
+
+```sh
+tccutil reset ScreenCapture dev.codetake.app
+tccutil reset Camera dev.codetake.app
+tccutil reset Microphone dev.codetake.app
 ```
 
 produces `CodeTake.app` and a `.dmg` in

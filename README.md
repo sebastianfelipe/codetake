@@ -70,7 +70,8 @@ Download `CodeTake_<version>_universal.dmg` from
 [GitHub Releases](https://github.com/sebastianfelipe/codetake/releases) (it
 runs natively on Apple silicon and Intel Macs), open it, and drag
 **CodeTake** to **Applications**. Or build it yourself: `pnpm install &&
-pnpm build` produces the same `.dmg`.
+pnpm build:local` produces the same `.dmg`, signed with your own certificate
+if you have one (see [docs/development.md](docs/development.md#building-a-release)).
 
 Until releases are signed with an Apple Developer ID, macOS warns that the
 developer can't be verified the first time: right-click CodeTake in
