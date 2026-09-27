@@ -23,6 +23,12 @@ on:
         description: Existing release tag to build, e.g. v0.2.0
         required: true
         type: string
+      platforms:
+        description: Which installers to build (existing files are replaced)
+        required: true
+        default: all
+        type: choice
+        options: [all, macos, windows, linux]
 
 permissions:
   contents: write
@@ -70,8 +76,23 @@ jobs:
             exit 1
           fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Choose platforms
+        id: platforms
+        env:
+          PLATFORMS: ${{ inputs.platforms || 'all' }}
+        run: |
+          # One .dmg that runs natively on Apple silicon and Intel Macs, plus
+          # Windows and Linux installers.
+          all='[
+            {"id":"macos","name":"macOS (universal)","os":"macos-latest","target":"universal-apple-darwin","rust-targets":"aarch64-apple-darwin,x86_64-apple-darwin"},
+            {"id":"windows","name":"Windows","os":"windows-latest","target":"x86_64-pc-windows-msvc","rust-targets":"x86_64-pc-windows-msvc"},
+            {"id":"linux","name":"Linux","os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","rust-targets":"x86_64-unknown-linux-gnu"}
+          ]'
+          matrix=$(jq -c --arg p "$PLATFORMS" '[.[] | select($p == "all" or .id == $p)]' <<<"$all")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
     outputs:
       release-id: ${{ steps.release.outputs.id }}
+      matrix: ${{ steps.platforms.outputs.matrix }}
 
   build:
     needs: verify
@@ -80,20 +101,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # One .dmg that runs natively on Apple silicon and Intel Macs.
-          - name: macOS (universal)
-            os: macos-latest
-            target: universal-apple-darwin
-            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
-          - name: Windows
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-            rust-targets: x86_64-pc-windows-msvc
-          - name: Linux
-            os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            rust-targets: x86_64-unknown-linux-gnu
+        include: ${{ fromJSON(needs.verify.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -115,6 +123,38 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri
       - run: pnpm install --frozen-lockfile
+      # Tauri treats a set-but-empty APPLE_CERTIFICATE as a certificate to
+      # import (and fails), so only export the Apple variables when the
+      # secrets exist. Without them the app is ad-hoc signed ("-").
+      - name: Configure macOS signing
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          export_var() {
+            local delimiter="EOF_$RANDOM$RANDOM"
+            { echo "$1<<$delimiter"; printenv "$1"; echo "$delimiter"; } >> "$GITHUB_ENV"
+          }
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "Signing with the configured Developer ID certificate."
+            export_var APPLE_CERTIFICATE
+            export_var APPLE_CERTIFICATE_PASSWORD
+            export_var APPLE_SIGNING_IDENTITY
+            if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+              echo "Notarizing with the configured Apple ID."
+              export_var APPLE_ID
+              export_var APPLE_PASSWORD
+              export_var APPLE_TEAM_ID
+            fi
+          else
+            echo "No signing certificate configured; the app will be ad-hoc signed."
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+          fi
       # Produces .dmg/.app on macOS, .msi/.exe on Windows, and .AppImage,
       # .deb and .rpm on Linux, and uploads them to the tag's release
       # (created by Release Please, with the changelog as its notes).
@@ -122,16 +162,10 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # For signed, notarized macOS builds, add these repository secrets:
-          # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
-          # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # Falls back to ad-hoc signing ("-") when no Developer ID is configured.
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Signing variables come from "Configure macOS signing". For signed,
+          # notarized macOS builds add these repository secrets:
+          # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
+          # and, for notarization, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID.
         with:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
