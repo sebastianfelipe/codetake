@@ -44,5 +44,9 @@ fn main() {
     };
     let started = Instant::now();
     Current::composite_recording(&job, &mut |_| {}).expect("composite");
-    println!("wrote {} in {:.2?}", job.destination.display(), started.elapsed());
+    println!(
+        "wrote {} in {:.2?}",
+        job.destination.display(),
+        started.elapsed()
+    );
 }
