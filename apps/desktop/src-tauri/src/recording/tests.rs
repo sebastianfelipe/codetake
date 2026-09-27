@@ -431,6 +431,7 @@ fn records_and_finalizes_an_mp4() {
     let dir = temp_dir("finalize");
     let events = Arc::new(Events::default());
 
+    let started = Instant::now();
     let handle = recorder::start::<FakePlatform>(
         StartRequest {
             config: config(&dir),
@@ -442,6 +443,7 @@ fn records_and_finalizes_an_mp4() {
     assert_eq!(handle.state(), RecordingState::Recording);
     thread::sleep(Duration::from_millis(600));
     let outcome = handle.stop().unwrap();
+    let wall = started.elapsed().as_secs_f64();
 
     assert!(
         outcome.complete,
@@ -464,7 +466,12 @@ fn records_and_finalizes_an_mp4() {
     );
     assert!(log.video_times.windows(2).all(|w| w[1] > w[0]));
     let end = log.finished_at.unwrap();
-    assert!((end - 0.6).abs() < 0.2, "ended at {end}");
+    // At least the time we recorded for, at most the wall-clock time
+    // (sleeps overrun on busy CI runners, so don't expect exactly 0.6 s).
+    assert!(
+        end >= 0.55 && end <= wall + 0.05,
+        "ended at {end}, wall {wall}"
+    );
     // The audio track covers the whole recording (flushed on stop).
     let audio_seconds = log.audio_frames as f64 / 48_000.0;
     assert!(
@@ -509,6 +516,7 @@ fn pausing_removes_time_from_the_recording() {
     let _guard = serial();
     reset(Behaviour::default());
     let dir = temp_dir("pause");
+    let started = Instant::now();
     let handle = recorder::start::<FakePlatform>(
         StartRequest {
             config: config(&dir),
@@ -520,16 +528,28 @@ fn pausing_removes_time_from_the_recording() {
 
     thread::sleep(Duration::from_millis(300));
     handle.pause().unwrap();
+    let paused_at = Instant::now();
     assert_eq!(handle.state(), RecordingState::Paused);
     assert!(handle.pause().is_err());
     thread::sleep(Duration::from_millis(500));
+    let paused_for = paused_at.elapsed().as_secs_f64();
     handle.resume().unwrap();
     thread::sleep(Duration::from_millis(300));
     let outcome = handle.stop().unwrap();
+    let wall = started.elapsed().as_secs_f64();
 
     assert!(outcome.complete);
+    // Measure against the actual wall-clock time rather than the requested
+    // sleeps, which overrun on busy CI runners: the recording must be about
+    // as long as the wall time minus the pause, and clearly shorter than the
+    // wall time.
     let duration = outcome.duration_ms as f64 / 1000.0;
-    assert!((duration - 0.6).abs() < 0.2, "duration {duration}");
+    let expected = wall - paused_for;
+    assert!(
+        duration <= expected + 0.05 && duration >= expected - 0.25,
+        "recorded {duration:.3}s; wall {wall:.3}s minus pause {paused_for:.3}s = {expected:.3}s"
+    );
+    assert!(duration < wall - 0.4, "the pause was not removed");
     let log = log().lock();
     let largest_gap = log
         .video_times
