@@ -1,15 +1,54 @@
 name: Release
 
+# Builds the installers for a release and attaches them to its GitHub
+# Release. Normally started by the Release Please workflow right after it
+# creates the vX.Y.Z tag and release; it can also be run by hand (Actions →
+# Release → Run workflow) to rebuild the installers of an existing tag.
+
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to build, e.g. v0.2.0
+        required: true
+        type: string
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build, e.g. v0.2.0
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
+  verify:
+    name: Verify version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      # The installers are named after the version in the app's files, so a
+      # tag that doesn't match them would publish mislabeled artifacts.
+      - name: Tag matches the app version
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          app=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          package=$(node -p "require('./apps/desktop/package.json').version")
+          crate=$(grep -m1 '^version' apps/desktop/src-tauri/Cargo.toml | cut -d'"' -f2)
+          echo "tag=$TAG tauri.conf.json=$app package.json=$package Cargo.toml=$crate"
+          for version in "$app" "$package" "$crate"; do
+            if [ "v$version" != "$TAG" ]; then
+              echo "::error::Tag $TAG does not match version $version in the app's files"
+              exit 1
+            fi
+          done
+
   build:
+    needs: verify
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -31,6 +70,8 @@ jobs:
             rust-targets: x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -49,7 +90,8 @@ jobs:
           workspaces: apps/desktop/src-tauri
       - run: pnpm install --frozen-lockfile
       # Produces .dmg/.app on macOS, .msi/.exe on Windows, and .AppImage,
-      # .deb and .rpm on Linux, attached to a draft release for the tag.
+      # .deb and .rpm on Linux, and uploads them to the tag's existing
+      # release (created by Release Please, with the changelog as its notes).
       # Windows and Linux builds report recording as not implemented yet.
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -68,8 +110,7 @@ jobs:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }}
-          tagName: ${{ github.ref_name }}
-          releaseName: CodeTake ${{ github.ref_name }}
-          releaseBody: See the assets below. macOS 13 or later is required.
-          releaseDraft: true
+          tagName: ${{ inputs.tag }}
+          releaseName: CodeTake ${{ inputs.tag }}
+          releaseDraft: false
           prerelease: false

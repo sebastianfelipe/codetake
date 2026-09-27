@@ -1,0 +1,41 @@
+name: Release Please
+
+# On every push to main, Release Please keeps a "chore(main): release x.y.z"
+# pull request up to date: the next version (from Conventional Commits:
+# fix → patch, feat → minor, breaking → minor while below 1.0), the
+# CHANGELOG, and the version in every file that has one. Merging that pull
+# request creates the vX.Y.Z tag and GitHub Release, and this workflow then
+# builds the installers and attaches them to it.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Tags created with the default GITHUB_TOKEN don't trigger other workflows,
+  # so the build is started from here once a release exists.
+  build:
+    name: Build installers
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    secrets: inherit
