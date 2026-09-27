@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.1](https://github.com/sebastianfelipe/codetake/compare/v0.1.0...v0.1.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **ci:** build the macOS installer without signing secrets ([d39ee02](https://github.com/sebastianfelipe/codetake/commit/d39ee022befad718a6a45a3ca5d035c9323f17bc))
+* **ci:** ship the macOS installer and publish releases with their installers ([#3](https://github.com/sebastianfelipe/codetake/issues/3)) ([390924c](https://github.com/sebastianfelipe/codetake/commit/390924c23d5b84be4a97786448d63fbf945343c5))
+
+
+### Documentation
+
+* describe draft releases and retries ([5b12e04](https://github.com/sebastianfelipe/codetake/commit/5b12e049c347b9f5cbc99b02cb815f02d3b569ae))
+
 ## 0.1.0 (2026-09-27)
 
 

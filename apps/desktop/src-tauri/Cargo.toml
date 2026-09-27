@@ -1,6 +1,6 @@
 [package]
 name = "codetake"
-version = "0.1.0"
+version = "0.1.1"
 description = "Record your code. A local-first screen and webcam recorder for developers."
 authors = ["CodeTake contributors"]
 license = "MIT"
