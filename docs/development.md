@@ -106,10 +106,14 @@ the Conventional Commit messages on `main`:
    `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml` and
    `Cargo.lock`).
 2. **Merging that pull request releases it**: Release Please creates the
-   `vX.Y.Z` tag and the GitHub Release (with the changelog as release notes),
-   then the same workflow builds the installers — a universal macOS `.dmg`,
-   Windows `.msi`/`.exe`, and Linux `.AppImage`/`.deb`/`.rpm` — and uploads
-   them to that release. Building takes roughly 10–15 minutes.
+   `vX.Y.Z` tag and a **draft** GitHub Release (with the changelog as release
+   notes). The same workflow then builds the installers — a universal macOS
+   `.dmg`, Windows `.msi`/`.exe`, and Linux `.AppImage`/`.deb`/`.rpm` —
+   uploads them to the draft and **publishes** it. A published release
+   therefore always has its installers; while they build (roughly 10–20
+   minutes) the release is visible only to maintainers. If a build fails, the
+   release stays a draft: fix the problem and re-run **Actions → Release →
+   Run workflow** with the tag.
 
 How the next version is chosen (while the version is below 1.0.0):
 
@@ -125,8 +129,8 @@ on `main`. Never edit the version numbers by hand: the release pull request
 does it, and the build refuses to run if the tag and the app's version
 disagree.
 
-To rebuild the installers of an existing release, run **Actions → Release →
-Run workflow** with its tag.
+To rebuild the installers of an existing release (or retry a failed one),
+run **Actions → Release → Run workflow** with its tag.
 
 Release Please runs with the repository's `GITHUB_TOKEN`, which requires
 *Settings → Actions → General → Workflow permissions → Allow GitHub Actions to
