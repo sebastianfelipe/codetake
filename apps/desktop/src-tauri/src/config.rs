@@ -299,6 +299,13 @@ pub fn video_bitrate(size: Size, fps: Fps) -> u32 {
 mod tests {
     use super::*;
 
+    /// An absolute output folder on the platform running the tests, as it
+    /// appears inside a JSON string (backslashes escaped on Windows).
+    #[cfg(windows)]
+    const OUTPUT_DIR_JSON: &str = r"C:\\Users\\dev\\Movies\\CodeTake";
+    #[cfg(not(windows))]
+    const OUTPUT_DIR_JSON: &str = "/Users/dev/Movies/CodeTake";
+
     fn sample_json() -> String {
         r#"{
             "source": { "kind": "display", "id": 1 },
@@ -311,9 +318,9 @@ mod tests {
             "music": { "trackId": "coding-01", "volume": 0.3 },
             "resolution": "1080p",
             "fps": 60,
-            "outputDirectory": "/Users/dev/Movies/CodeTake"
+            "outputDirectory": "{OUTPUT}"
         }"#
-        .to_string()
+        .replace("{OUTPUT}", OUTPUT_DIR_JSON)
     }
 
     #[test]
@@ -338,9 +345,10 @@ mod tests {
             "music": null,
             "resolution": "source",
             "fps": 30,
-            "outputDirectory": "/tmp/out"
-        }"#;
-        let config = RecordingConfig::from_json(json).unwrap();
+            "outputDirectory": "{OUTPUT}"
+        }"#
+        .replace("{OUTPUT}", OUTPUT_DIR_JSON);
+        let config = RecordingConfig::from_json(&json).unwrap();
         assert_eq!(config.source, CaptureSource::Window { id: 42 });
         assert!(!config.system_audio);
         assert!(!config.has_audio());
@@ -399,7 +407,7 @@ mod tests {
 
     #[test]
     fn rejects_relative_output_directories() {
-        let json = sample_json().replace("/Users/dev/Movies/CodeTake", "Movies/CodeTake");
+        let json = sample_json().replace(OUTPUT_DIR_JSON, "Movies/CodeTake");
         assert!(RecordingConfig::from_json(&json).is_err());
     }
 
