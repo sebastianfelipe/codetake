@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2](https://github.com/sebastianfelipe/codetake/compare/v0.1.1...v0.1.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **recording:** keep the camera preview live while recording ([7b04503](https://github.com/sebastianfelipe/codetake/commit/7b04503570763a9ccf8b5f9511951de08b0b7efb))
+* **recording:** keep the camera preview live while recording ([#5](https://github.com/sebastianfelipe/codetake/issues/5)) ([9366982](https://github.com/sebastianfelipe/codetake/commit/9366982bf311aba8346468c9b6b13085c3a7d48b))
+
 ## [0.1.1](https://github.com/sebastianfelipe/codetake/compare/v0.1.0...v0.1.1) (2026-09-27)
 
 
