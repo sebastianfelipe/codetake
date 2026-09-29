@@ -87,6 +87,7 @@ pub fn run() {
             commands::recover_recordings,
             commands::load_settings,
             commands::save_settings,
+            commands::subscribe_preview_frames,
             commands::start_preview,
             commands::stop_preview,
             commands::start_recording,

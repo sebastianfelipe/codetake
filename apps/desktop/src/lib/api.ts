@@ -86,10 +86,12 @@ export function decodePreviewFrame(buffer: ArrayBuffer): PreviewFrame | null {
   return { kind, image: new ImageData(pixels, width, height) };
 }
 
-export function startPreview(
-  request: PreviewRequest,
-  onFrame: (frame: PreviewFrame) => void,
-): Promise<void> {
+/**
+ * Receives preview thumbnails: from the preview session before recording
+ * and from the recorder while recording. Subscribe once; the channel stays
+ * valid for the lifetime of the window.
+ */
+export function subscribePreviewFrames(onFrame: (frame: PreviewFrame) => void): Promise<void> {
   const frames = new Channel<ArrayBuffer>();
   frames.onmessage = (message) => {
     const frame = decodePreviewFrame(message);
@@ -97,7 +99,11 @@ export function startPreview(
       onFrame(frame);
     }
   };
-  return invoke<void>("start_preview", { request, frames });
+  return invoke<void>("subscribe_preview_frames", { frames });
+}
+
+export function startPreview(request: PreviewRequest): Promise<void> {
+  return invoke<void>("start_preview", { request });
 }
 
 /** Mirrors `export::ExportSettings`. */

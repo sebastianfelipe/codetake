@@ -33,6 +33,8 @@ const permissions: PermissionState = {
 };
 
 let settings: unknown = null;
+let previewFrames: Channel<ArrayBuffer> | undefined;
+let previewTimer: number | undefined;
 let recording: { startedAt: number; pausedAt: number | null; pausedMs: number } | null = null;
 let statusTimer: number | undefined;
 
@@ -97,8 +99,8 @@ function sampleScreen(width: number, height: number): ImageData {
   return ctx.getImageData(0, 0, width, height);
 }
 
-/** A soft placeholder where the webcam image would be. */
-function sampleCamera(width: number, height: number): ImageData {
+/** A soft placeholder where the webcam image would be; `timeMs` animates it. */
+function sampleCamera(width: number, height: number, timeMs: number): ImageData {
   const canvas = new OffscreenCanvas(width, height);
   const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
   const gradient = ctx.createLinearGradient(0, 0, width, height);
@@ -108,10 +110,11 @@ function sampleCamera(width: number, height: number): ImageData {
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
   ctx.beginPath();
-  ctx.arc(width / 2, height * 0.42, height * 0.17, 0, Math.PI * 2);
+  const sway = Math.sin(timeMs / 300) * width * 0.08;
+  ctx.arc(width / 2 + sway, height * 0.42, height * 0.17, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.ellipse(width / 2, height * 0.95, width * 0.3, height * 0.3, 0, 0, Math.PI * 2);
+  ctx.ellipse(width / 2 + sway, height * 0.95, width * 0.3, height * 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
   return ctx.getImageData(0, 0, width, height);
 }
@@ -182,14 +185,15 @@ export function installMockBackend(): void {
           return null;
         case "plugin:path|resolve_directory":
           return "/Users/dev";
-        case "start_preview": {
-          const channel = payload.frames as Channel<ArrayBuffer> | undefined;
+        case "subscribe_preview_frames":
+          previewFrames = payload.frames as Channel<ArrayBuffer>;
+          return null;
+        case "start_preview":
           window.setTimeout(() => {
-            channel?.onmessage(encodeFrame(0, sampleScreen(960, 624)));
-            channel?.onmessage(encodeFrame(1, sampleCamera(320, 240)));
+            previewFrames?.onmessage(encodeFrame(0, sampleScreen(960, 624)));
+            previewFrames?.onmessage(encodeFrame(1, sampleCamera(320, 240, 0)));
           }, 50);
           return null;
-        }
         case "allow_media":
           return null;
         case "music_track_file":
@@ -217,6 +221,10 @@ export function installMockBackend(): void {
         case "start_recording":
           recording = { startedAt: Date.now(), pausedAt: null, pausedMs: 0 };
           statusTimer = window.setInterval(() => void emit("recording://status", status()), 250);
+          // Like the real recorder, keep the preview moving while recording.
+          previewTimer = window.setInterval(() => {
+            previewFrames?.onmessage(encodeFrame(1, sampleCamera(320, 240, elapsed())));
+          }, 100);
           return {
             outputPath: "/Users/dev/Movies/CodeTake/mock.mp4",
             startedAt: "",
@@ -233,6 +241,7 @@ export function installMockBackend(): void {
           return null;
         case "stop_recording": {
           window.clearInterval(statusTimer);
+          window.clearInterval(previewTimer);
           const outcome: RecordingOutcome = {
             path: "/Users/dev/Movies/CodeTake/2026-09-26/raw/coding-session-2026-09-26-09-32-14-screen.mp4",
             cameraPath:

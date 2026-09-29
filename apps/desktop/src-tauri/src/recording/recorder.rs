@@ -34,6 +34,7 @@ use super::capture::{
     ScreenCaptureRequest, SharedFrame, SystemAudioCapture, VideoEncoder, VideoSink,
 };
 use super::clock::MediaClock;
+use super::preview::{FrameThrottle, PreviewKind};
 use super::session::{RecordingSession, SessionSummary};
 use super::state::{RecordingEvent, RecordingState};
 use crate::audio::mixer::{AudioMixer, MixerConfig, MusicTrack, SourceKind};
@@ -88,6 +89,10 @@ pub struct RecordingOutcome {
 pub trait RecorderEvents: Send + Sync + 'static {
     fn status(&self, status: &RecordingStatus);
     fn finished(&self, outcome: &RecordingOutcome);
+    /// A live preview thumbnail (tightly packed RGBA) of what is being
+    /// recorded, so the preview keeps moving while the recorder owns the
+    /// camera and screen.
+    fn preview_frame(&self, _kind: PreviewKind, _width: usize, _height: usize, _rgba: Vec<u8>) {}
 }
 
 /// State shared between the capture callbacks and the recorder threads.
@@ -444,7 +449,7 @@ pub fn start<P: Platform>(
     *shared.clock.lock() = Some(MediaClock::new(host_time()));
     shared.transition(RecordingEvent::Started)?;
 
-    let threads = spawn_media_threads(&session, &shared, host_time);
+    let threads = spawn_media_threads(&session, &shared, events.clone(), host_time);
     let (commands, receiver) = mpsc::channel();
     let supervisor = Supervisor {
         session: session.clone(),
@@ -532,6 +537,7 @@ struct MediaThreads {
 fn spawn_media_threads(
     session: &RecordingSession,
     shared: &Arc<Shared>,
+    events: Arc<dyn RecorderEvents>,
     host_time: fn() -> f64,
 ) -> MediaThreads {
     let fps = session.config.fps.as_u32();
@@ -540,7 +546,7 @@ fn spawn_media_threads(
         let shared = shared.clone();
         thread::Builder::new()
             .name("codetake-video".into())
-            .spawn(move || video_loop(&shared, fps, host_time))
+            .spawn(move || video_loop(&shared, fps, events.as_ref(), host_time))
             .expect("spawning a thread only fails when the OS is out of resources")
     };
     let audio = session.config.has_audio().then(|| {
@@ -563,8 +569,12 @@ fn sleep_until(host_time: fn() -> f64, target: f64) {
 /// Encodes the most recent screen and camera frames at a constant rate, with
 /// the same timestamp in both files. Running at a fixed rate (rather than
 /// on screen updates) keeps the webcam moving even when the screen is static.
-fn video_loop(shared: &Shared, fps: u32, host_time: fn() -> f64) {
+fn video_loop(shared: &Shared, fps: u32, events: &dyn RecorderEvents, host_time: fn() -> f64) {
     let interval = 1.0 / f64::from(fps);
+    let screen_preview = FrameThrottle::screen();
+    let camera_preview = FrameThrottle::camera();
+    let mut send_preview =
+        |kind, width, height, rgba| events.preview_frame(kind, width, height, rgba);
     let mut next_tick = host_time();
     let mut last_media_time = f64::NEG_INFINITY;
 
@@ -591,6 +601,13 @@ fn video_loop(shared: &Shared, fps: u32, host_time: fn() -> f64) {
             .lock()
             .as_ref()
             .map(|(frame, _)| frame.clone());
+
+        // Keep the on-screen preview live: it shows these frames while the
+        // recorder owns the devices (throttled, small thumbnails).
+        screen_preview.offer(&screen, &mut send_preview);
+        if let Some(camera) = &camera {
+            camera_preview.offer(camera, &mut send_preview);
+        }
 
         let mut draw = |dst: &mut BgraMut<'_>| {
             screen.read(&mut |src| {
