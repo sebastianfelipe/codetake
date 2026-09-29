@@ -1,9 +1,12 @@
-//! Live preview shown before recording: a screen thumbnail, the camera
-//! image and the microphone level.
+//! Live preview: a screen thumbnail, the camera image and the microphone
+//! level.
 //!
-//! It reuses the recording capture abstractions at low frame rates and small
-//! sizes. Each part is best effort: a missing permission or device is
-//! reported through [`PreviewEvents::error`] without stopping the others.
+//! Before recording, [`PreviewSession`] runs its own captures at low frame
+//! rates and small sizes. Each part is best effort: a missing permission or
+//! device is reported through [`PreviewEvents::error`] without stopping the
+//! others. While recording, the devices belong to the recorder, which feeds
+//! the same thumbnails from its own frames through a [`FrameThrottle`] so the
+//! preview stays live.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -50,17 +53,39 @@ pub trait PreviewEvents: Send + Sync + 'static {
     fn error(&self, kind: PreviewKind, error: AppError);
 }
 
-/// Forwards at most one frame per `interval`, downscaled.
-struct ThrottledFrames {
+/// Turns full-size frames into preview thumbnails, at most one per interval.
+pub struct FrameThrottle {
     kind: PreviewKind,
     interval: Duration,
     max_size: (usize, usize),
     last: Mutex<Option<Instant>>,
-    events: Arc<dyn PreviewEvents>,
 }
 
-impl VideoSink for ThrottledFrames {
-    fn frame(&self, frame: SharedFrame, _host_time: f64) {
+impl FrameThrottle {
+    pub fn screen() -> Self {
+        Self::new(PreviewKind::Screen, SCREEN_INTERVAL, SCREEN_THUMBNAIL)
+    }
+
+    pub fn camera() -> Self {
+        Self::new(PreviewKind::Camera, CAMERA_INTERVAL, CAMERA_THUMBNAIL)
+    }
+
+    fn new(kind: PreviewKind, interval: Duration, max_size: (usize, usize)) -> Self {
+        Self {
+            kind,
+            interval,
+            max_size,
+            last: Mutex::new(None),
+        }
+    }
+
+    /// Calls `emit` with a downscaled RGBA copy of `frame`, unless a
+    /// thumbnail was produced less than one interval ago.
+    pub fn offer(
+        &self,
+        frame: &SharedFrame,
+        emit: &mut dyn FnMut(PreviewKind, usize, usize, Vec<u8>),
+    ) {
         {
             let mut last = self.last.lock();
             if last.is_some_and(|t| t.elapsed() < self.interval) {
@@ -70,12 +95,26 @@ impl VideoSink for ThrottledFrames {
         }
         frame.read(&mut |src| {
             let (w, h, rgba) = thumbnail_rgba(src, self.max_size.0, self.max_size.1);
-            self.events.frame(self.kind, w, h, rgba);
+            emit(self.kind, w, h, rgba);
+        });
+    }
+}
+
+/// Sends the preview session's captured frames as thumbnails.
+struct ThrottledFrames {
+    throttle: FrameThrottle,
+    events: Arc<dyn PreviewEvents>,
+}
+
+impl VideoSink for ThrottledFrames {
+    fn frame(&self, frame: SharedFrame, _host_time: f64) {
+        self.throttle.offer(&frame, &mut |kind, w, h, rgba| {
+            self.events.frame(kind, w, h, rgba)
         });
     }
 
     fn error(&self, error: AppError) {
-        self.events.error(self.kind, error);
+        self.events.error(self.throttle.kind, error);
     }
 }
 
@@ -121,12 +160,9 @@ fn preview_size(source: Size) -> Size {
 impl PreviewSession {
     pub fn start<P: Platform>(request: &PreviewRequest, events: Arc<dyn PreviewEvents>) -> Self {
         let mut session = Self::default();
-        let throttled = |kind, interval, max_size| {
+        let throttled = |throttle: FrameThrottle| {
             Arc::new(ThrottledFrames {
-                kind,
-                interval,
-                max_size,
-                last: Mutex::new(None),
+                throttle,
                 events: events.clone(),
             })
         };
@@ -139,11 +175,7 @@ impl PreviewSession {
                     fps: 2,
                     show_cursor: false,
                 })?;
-                screen.start(throttled(
-                    PreviewKind::Screen,
-                    SCREEN_INTERVAL,
-                    SCREEN_THUMBNAIL,
-                ))?;
+                screen.start(throttled(FrameThrottle::screen()))?;
                 Ok(screen)
             });
             match result {
@@ -154,11 +186,7 @@ impl PreviewSession {
 
         if let Some(id) = &request.camera_id {
             let result = P::camera_capture(id).and_then(|mut camera| {
-                camera.start(throttled(
-                    PreviewKind::Camera,
-                    CAMERA_INTERVAL,
-                    CAMERA_THUMBNAIL,
-                ))?;
+                camera.start(throttled(FrameThrottle::camera()))?;
                 Ok(camera)
             });
             match result {

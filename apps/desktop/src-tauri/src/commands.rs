@@ -36,6 +36,9 @@ pub const EVENT_PREVIEW_ERROR: &str = "preview://error";
 pub struct AppState {
     recording: Mutex<Option<RecordingHandle>>,
     preview: Mutex<Option<PreviewSession>>,
+    /// Where preview thumbnails go, from the preview session before
+    /// recording and from the recorder while recording.
+    preview_frames: Mutex<Option<Channel<InvokeResponseBody>>>,
 }
 
 async fn blocking<T: Send + 'static>(
@@ -265,9 +268,43 @@ pub async fn export_video(
     .await
 }
 
+/// Sends a preview thumbnail to the window, if it has subscribed.
+fn send_preview_frame(
+    app: &AppHandle,
+    kind: PreviewKind,
+    width: usize,
+    height: usize,
+    rgba: &[u8],
+) {
+    let state = app.state::<AppState>();
+    let frames = state.preview_frames.lock();
+    let Some(frames) = frames.as_ref() else {
+        return;
+    };
+    // Binary message: [kind, 0, width (u16 LE), height (u16 LE), 0, 0] + RGBA.
+    let kind_byte = match kind {
+        PreviewKind::Screen => 0,
+        PreviewKind::Camera => 1,
+        PreviewKind::Microphone => 2,
+    };
+    let mut message = Vec::with_capacity(8 + rgba.len());
+    message.extend_from_slice(&[kind_byte, 0]);
+    message.extend_from_slice(&(width as u16).to_le_bytes());
+    message.extend_from_slice(&(height as u16).to_le_bytes());
+    message.extend_from_slice(&[0, 0]);
+    message.extend_from_slice(rgba);
+    let _ = frames.send(InvokeResponseBody::Raw(message));
+}
+
+/// Registers the window's channel for preview thumbnails. Called once; the
+/// same channel receives frames before and during recordings.
+#[tauri::command]
+pub fn subscribe_preview_frames(app: AppHandle, frames: Channel<InvokeResponseBody>) {
+    *app.state::<AppState>().preview_frames.lock() = Some(frames);
+}
+
 struct TauriPreviewEvents {
     app: AppHandle,
-    frames: Channel<InvokeResponseBody>,
 }
 
 #[derive(Serialize)]
@@ -279,19 +316,7 @@ struct PreviewErrorPayload {
 
 impl PreviewEvents for TauriPreviewEvents {
     fn frame(&self, kind: PreviewKind, width: usize, height: usize, rgba: Vec<u8>) {
-        // Binary message: [kind, 0, width (u16 LE), height (u16 LE), 0, 0] + RGBA.
-        let kind_byte = match kind {
-            PreviewKind::Screen => 0,
-            PreviewKind::Camera => 1,
-            PreviewKind::Microphone => 2,
-        };
-        let mut message = Vec::with_capacity(8 + rgba.len());
-        message.extend_from_slice(&[kind_byte, 0]);
-        message.extend_from_slice(&(width as u16).to_le_bytes());
-        message.extend_from_slice(&(height as u16).to_le_bytes());
-        message.extend_from_slice(&[0, 0]);
-        message.extend_from_slice(&rgba);
-        let _ = self.frames.send(InvokeResponseBody::Raw(message));
+        send_preview_frame(&self.app, kind, width, height, &rgba);
     }
 
     fn level(&self, level: f32) {
@@ -308,11 +333,7 @@ impl PreviewEvents for TauriPreviewEvents {
 
 /// Starts (or restarts) the live preview.
 #[tauri::command]
-pub async fn start_preview(
-    app: AppHandle,
-    request: PreviewRequest,
-    frames: Channel<InvokeResponseBody>,
-) -> AppResult<()> {
+pub async fn start_preview(app: AppHandle, request: PreviewRequest) -> AppResult<()> {
     blocking(move || {
         let state = app.state::<AppState>();
         if state
@@ -325,10 +346,7 @@ pub async fn start_preview(
         }
         // Release the devices before opening them again.
         drop(state.preview.lock().take());
-        let events = Arc::new(TauriPreviewEvents {
-            app: app.clone(),
-            frames,
-        });
+        let events = Arc::new(TauriPreviewEvents { app: app.clone() });
         let session = PreviewSession::start::<Current>(&request, events);
         *state.preview.lock() = Some(session);
         Ok(())
@@ -357,6 +375,10 @@ impl RecorderEvents for TauriRecorderEvents {
         // The review step happens in the window; bring it forward even if the
         // recording was stopped from the menu bar with the window closed.
         crate::tray::show_main_window(&self.0);
+    }
+
+    fn preview_frame(&self, kind: PreviewKind, width: usize, height: usize, rgba: Vec<u8>) {
+        send_preview_frame(&self.0, kind, width, height, &rgba);
     }
 }
 

@@ -14,13 +14,23 @@ use std::time::Duration;
 
 use codetake_lib::config::*;
 use codetake_lib::platform::{Current, Platform};
+use codetake_lib::recording::preview::PreviewKind;
 use codetake_lib::recording::recorder::{
     self, RecorderEvents, RecordingOutcome, RecordingStatus, StartRequest,
 };
 
-struct PrintEvents;
+/// Prints status updates and counts live preview thumbnails.
+#[derive(Default)]
+struct PrintEvents {
+    previews: std::sync::Mutex<std::collections::HashMap<String, usize>>,
+}
 
 impl RecorderEvents for PrintEvents {
+    fn preview_frame(&self, kind: PreviewKind, width: usize, height: usize, _rgba: Vec<u8>) {
+        let key = format!("{kind:?} {width}x{height}");
+        *self.previews.lock().unwrap().entry(key).or_default() += 1;
+    }
+
     fn status(&self, status: &RecordingStatus) {
         eprintln!(
             "{:?} {:>6} ms  mic {:.2}  system {:.2}  {:?}",
@@ -129,12 +139,13 @@ fn main() {
         },
         output_directory: output,
     };
+    let events = Arc::new(PrintEvents::default());
     let handle = recorder::start::<Current>(
         StartRequest {
             music_path: value("--music").map(PathBuf::from),
             config,
         },
-        Arc::new(PrintEvents),
+        events.clone(),
     )
     .expect("start recording");
     if flag("--pause") {
@@ -149,4 +160,5 @@ fn main() {
     }
     let outcome = handle.stop().expect("stop");
     println!("{outcome:?}");
+    println!("preview thumbnails: {:?}", events.previews.lock().unwrap());
 }

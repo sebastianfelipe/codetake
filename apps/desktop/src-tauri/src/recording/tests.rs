@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 
 use super::capture::*;
+use super::preview::PreviewKind;
 use super::recorder::{self, RecorderEvents, RecordingOutcome, RecordingStatus, StartRequest};
 use super::state::RecordingState;
 use crate::capabilities::{macos_capabilities, OsVersion, PlatformCapabilities};
@@ -354,7 +355,11 @@ type Finished = (Option<PathBuf>, bool, Option<String>);
 struct Events {
     statuses: Mutex<Vec<RecordingState>>,
     finished: Mutex<Option<Finished>>,
+    previews: Mutex<Vec<Thumbnail>>,
 }
+
+/// A preview thumbnail received: kind, width, height, first pixel, time.
+type Thumbnail = (PreviewKind, usize, usize, [u8; 4], Instant);
 
 impl RecorderEvents for Events {
     fn status(&self, status: &RecordingStatus) {
@@ -366,6 +371,12 @@ impl RecorderEvents for Events {
             outcome.complete,
             outcome.error.as_ref().map(|e| e.code().to_string()),
         ));
+    }
+    fn preview_frame(&self, kind: PreviewKind, width: usize, height: usize, rgba: Vec<u8>) {
+        let pixel = [rgba[0], rgba[1], rgba[2], rgba[3]];
+        self.previews
+            .lock()
+            .push((kind, width, height, pixel, Instant::now()));
     }
 }
 
@@ -616,6 +627,58 @@ fn records_the_camera_to_its_own_file_in_sync_with_the_screen() {
         !outcome.export_path.exists(),
         "the review step exports the final video"
     );
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn keeps_the_preview_live_while_recording() {
+    // Regression test: the preview used to freeze on its last frame during
+    // recordings, because the preview session releases the devices to the
+    // recorder. The recorder now sends the thumbnails itself.
+    let _guard = serial();
+    reset(Behaviour::default());
+    let dir = temp_dir("live-preview");
+    let mut config = config(&dir);
+    config.camera = Some(CameraConfig {
+        device_id: "cam".into(),
+        overlay: CameraOverlay::default(),
+    });
+    let events = Arc::new(Events::default());
+    let handle = recorder::start::<FakePlatform>(
+        StartRequest {
+            config,
+            music_path: None,
+        },
+        events.clone(),
+    )
+    .unwrap();
+    thread::sleep(Duration::from_millis(1200));
+    handle.stop().unwrap();
+
+    let previews = events.previews.lock();
+    let camera: Vec<_> = previews
+        .iter()
+        .filter(|p| p.0 == PreviewKind::Camera)
+        .collect();
+    let screen: Vec<_> = previews
+        .iter()
+        .filter(|p| p.0 == PreviewKind::Screen)
+        .collect();
+    // Camera ~15 per second, screen ~2 per second.
+    assert!(camera.len() >= 8, "{} camera thumbnails", camera.len());
+    assert!(screen.len() >= 2, "{} screen thumbnails", screen.len());
+    // RGBA thumbnails of the right images (the fake camera is green, the
+    // fake screen is BGRA [10, 20, 30]).
+    assert_eq!(camera[0].3, [0, 255, 0, 255]);
+    assert_eq!(screen[0].3, [30, 20, 10, 255]);
+    // Throttled: never more often than the preview rate.
+    let fastest = camera
+        .windows(2)
+        .map(|w| w[1].4.duration_since(w[0].4))
+        .min()
+        .unwrap();
+    assert!(fastest >= Duration::from_millis(60), "{fastest:?}");
+    drop(previews);
     fs::remove_dir_all(dir).unwrap();
 }
 
